@@ -1,0 +1,18 @@
+#!/bin/sh -e
+
+# Copyright (C) 2024, John Clark <inindev@gmail.com>
+
+# kernel post-install hook: /etc/kernel/postinst.d script
+# to set permissions after a new kernel is package installed
+
+version="$1"
+
+# passing the kernel version is required
+if [ -z "${version}" ]; then
+        echo >&2 "E: kernel_chmod: ${DPKG_MAINTSCRIPT_PACKAGE:-kernel package} did not pass a version number"
+        exit 2
+fi
+
+chmod 644 "/boot/<DTB_FILE>-${version}"
+chmod 600 "/boot/System.map-${version}"
+chmod 600 "/boot/vmlinuz-${version}"
