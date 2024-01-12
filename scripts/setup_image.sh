@@ -12,17 +12,29 @@ main() {
     test -e "$media" || { echo "error: unable to find media: $media"; exit 1; }
     trap "on_exit $mountpt" EXIT INT QUIT ABRT TERM
 
-    local kern_deb='../downloads/linux-image-6.1.0-17-arm64_6.1.69-1_arm64.deb'
+    local kern_rk3568_deb='downloads/linux-image-6.1.0-17-arm64_6.1.69-1_arm64.deb'
+    local kern_rk3588_deb='downloads/linux-image-6.7.0-1-arm64_6.7.0-1_arm64.deb'
 
-    setup_odroid_m1  "$media" "$mountpt"
-}
+    # nanopi-r5c
+#    setup_image "$media" "$mountpt" "nanopi-r5c" 'rk3568-nanopi-r5c.dtb' "$kern_rk3568_deb" '0' 'outbin'
 
-setup_odroid_m1() {
-    local media="$1"
-    local mountpt="$2"
+    # nanopi-r5s
+#    setup_image "$media" "$mountpt" "nanopi-r5s" 'rk3568-nanopi-r5s.dtb' "$kern_rk3568_deb" '0' 'outbin'
 
     # odroid-m1
-    setup_image "$media" "$mountpt" "odroid-m1" 'rk3568-odroid-m1.dtb' 'linux-image-6.1.0-17-arm64_6.1.69-1_arm64.deb' '0' 'outbin'
+#    setup_image "$media" "$mountpt" "odroid-m1" 'rk3568-odroid-m1.dtb' "$kern_rk3568_deb" '0' 'outbin'
+
+    # radxa-e25
+#    setup_image "$media" "$mountpt" "radxa-e25" 'rk3568-radxa-e25.dtb' "$kern_rk3568_deb" '0' 'outbin'
+
+    # nanopc-t6
+#    setup_image "$media" "$mountpt" "nanopc-t6" 'rk3588-nanopc-t6.dtb' "$kern_rk3588_deb" '0' 'outbin'
+
+    # nanopi-r6c
+#    setup_image "$media" "$mountpt" "nanopi-r6c" 'rk3588-nanopi-r6c.dtb' "$kern_rk3588_deb" '0' 'outbin'
+
+    # rock-5b
+    setup_image "$media" "$mountpt" "rock-5b" 'rk3588-rock-5b.dtb' "$kern_rk3588_deb" '0' 'outbin'
 }
 
 setup_image() {
@@ -34,10 +46,11 @@ setup_image() {
     local rev="${6:-0}"
     local outbin="${7:-outbin}"
 
+    echo "${h1}configuring debian image...${rst}"
+
     # copy image locally
-    mkdir -p "$outbin"
     local tmp_img_name="$outbin/${board}.img.tmp"
-    cp "$media" "$tmp_img_name"
+    install -Dvm 644 "$media" "$tmp_img_name"
     mount_media "$tmp_img_name" "$mountpt"
 
     # set dtb and image name
@@ -53,10 +66,16 @@ setup_image() {
 
     unmount_media "$mountpt"
 
+    # install u-boot
+    install_uboot "$tmp_img_name" "$board"
+
+    # rename to final name
     local out_img_name="$outbin/$img_name"
     mv "$tmp_img_name" "$out_img_name"
+
     echo "\n${cya}image $out_img_name is ready${rst}"
     echo "(use \"sudo mount -no loop,offset=16M $out_img_name /mnt\" to mount)\n"
+
 }
 
 install_kernel() {
@@ -67,7 +86,7 @@ install_kernel() {
     local kfname="$(basename "$kfpath")"
     local kdir="$(dirname "$kfpath")"
 
-    echo "${h1}installing kernel $kfname${rst}"
+    echo "${h1}installing kernel: $kfname${rst}"
     sudo mount -vo bind "$kdir" "$mountpt/mnt"
     sudo chroot "$mountpt" "/usr/bin/dpkg" -i "/mnt/$kfname"
     sudo umount "$mountpt/mnt"
@@ -78,13 +97,14 @@ set_dtb() {
     local mountpt="$1"
     local dtbname="$2"
 
+    echo "${h1}installing device tree...${rst}"
     sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/etc/kernel/postinst.d/dtb_cp"
     sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/etc/kernel/postinst.d/kernel_chmod"
     sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/etc/kernel/postrm.d/dtb_rm"
     sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/boot/mk_extlinux"
 
     # some kernels require an external dtb
-    [ -e "download/$dtbname" ] && install -vm 644 "download/$dtbname" "$mountpt/boot"
+    [ -e "downloads/$dtbname" ] && install -vm 644 "downloads/$dtbname" "$mountpt/boot" || true
 }
 
 set_hostname() {
@@ -97,7 +117,6 @@ set_hostname() {
     local hostname="${dist}-${board}"
 
     echo "$hostname" | sudo tee "$mountpt/etc/hostname"
-#    sudo sed -i "/127.0.1.1.*/s/.*/127.0.1.1\t$hostname/" "$mountpt/etc/hosts"
     sudo sed -i "s/\(127\.0\.1\.1\).*/\1\t$hostname/" "$mountpt/etc/hosts"
 }
 
@@ -117,6 +136,16 @@ get_img_name() {
     fi
 
     img_name="${img_name}.img"
+}
+
+install_uboot() {
+    local media="$1"
+    local board="$2"
+
+    echo "${h1}installing u-boot...${rst}"
+    sudo dd bs=4K seek=8 if="downloads/${board}_idbloader.img" of="$media" conv=notrunc
+    sudo dd bs=4K seek=2048 if="downloads/${board}_u-boot.itb" of="$media" conv=notrunc,fsync
+    echo "u-boot installed successfully"
 }
 
 mount_media() {
@@ -175,6 +204,6 @@ mag='\033[35m'
 cya='\033[36m'
 h1="\n${blu}==>${rst} ${bld}"
 
-cd "$(dirname "$(realpath "$0")")"
+cd "$(dirname "$(realpath "$0")")/.."
 main "$@"
 

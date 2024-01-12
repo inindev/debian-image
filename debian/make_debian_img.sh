@@ -156,7 +156,8 @@ main() {
     sudo umount "$mountpt"
     sudo rm -rf "$mountpt"
 
-    echo "\n${cya}image is now ready${rst}"
+    chmod 444 "$media" # source image should be treated as immutable
+    echo "\n${cya}$media image is now ready${rst}"
     echo
 }
 
