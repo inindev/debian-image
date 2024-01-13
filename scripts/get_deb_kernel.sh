@@ -19,7 +19,8 @@ main() {
     local kurl="$(wget -qO - $kpre | sed -rn 's|.*href=\"(.*_arm64.deb)\".*|\1|p' | head -n1)"
 
     echo "fetching: $kurl"
-    wget -P "downloads" "$kurl"
+    mkdir -p 'downloads/kernels'
+    wget -P "downloads/kernels" "$kurl"
 }
 
 
