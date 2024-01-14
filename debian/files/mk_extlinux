@@ -48,7 +48,8 @@ gen_menu_header() {
 gen_menu_item() {
     local num="$1"
     local kver="$2"
-    local prms="$3"
+    local dtbos="$3"
+    local prms="$4"
 
     local boot_dir=$([ "$(stat --printf %d /)" -eq "$(stat --printf %d /boot)" ] && echo '/boot')
 
@@ -57,6 +58,7 @@ gen_menu_item() {
     echo "\tlinux ${boot_dir}/vmlinuz-${kver}"
     echo "\tinitrd ${boot_dir}/initrd.img-${kver}"
     echo "\tfdt ${boot_dir}/<DTB_FILE>-${kver}"
+    [ -z "${dtbos}" ] || echo "\tfdtoverlays ${dtbos}"
     echo "\tappend ${prms}"
 }
 
@@ -75,9 +77,10 @@ main() {
     local config="$(gen_menu_header ${kver_count})\n\n"
 
     local num=0
+    local dtbos="$(find '/boot/overlay' -maxdepth 1 -name '*.dtbo' 2>/dev/null | sort | xargs)"
     local prms="root=$(get_root_dev) ${EXLT_CMD_LINE}"
     for kver in ${kvers}; do
-        local entry="$(gen_menu_item "${num}" "${kver}" "${prms}")"
+        local entry="$(gen_menu_item "${num}" "${kver}" "${dtbos}" "${prms}")"
         num="$((num+1))"
         config="${config}\n${entry}\n"
     done
