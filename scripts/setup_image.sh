@@ -9,13 +9,16 @@ main() {
     local media="${1:-debian/base_mmc_2g.img}"
     local mountpt="${2:-rootfs}"
 
+    local inindev_kern='linux-image-6.7.0-1-arm64_6.7.0-1_arm64.deb'
+
     test -e "$media" || { echo "error: unable to find media: $media"; exit 1; }
     trap "on_exit $mountpt" EXIT INT QUIT ABRT TERM
 
-    prepare
+    # ensure all prerequisites are downloaded
+    preflight_check "$inindev_kern"
 
     local kern_rk3568_deb='downloads/kernels/linux-image-6.1.0-17-arm64_6.1.69-1_arm64.deb'
-    local kern_rk3588_deb='downloads/kernels/linux-image-6.7.0-1-arm64_6.7.0-1_arm64.deb'
+    local kern_rk3588_deb="downloads/kernels/$inindev_kern"
 
     # nanopi-r5c
 #    setup_image "$media" "$mountpt" "nanopi-r5c" 'rk3568-nanopi-r5c.dtb' "$kern_rk3568_deb" '0' 'outbin'
@@ -150,8 +153,8 @@ install_uboot() {
     echo "u-boot installed successfully"
 }
 
-prepare() {
-    local inindev_kern='linux-image-6.7.0-1-arm64_6.7.0-1_arm64.deb'
+preflight_check() {
+    local inindev_kern="$1"
 
     # download kernels
     if ! [ -d 'downloads/kernels' ]; then
