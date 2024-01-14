@@ -92,6 +92,8 @@ main() {
     local lfwn=$(basename "$lfw")
     local lfwbn="${lfwn%%.*}"
     sudo tar -C "$mountpt/usr/lib/firmware" --strip-components=1 --wildcards -xavf "$lfw" \
+        "$lfwbn/microchip/mscc*" \
+        "$lfwbn/nvidia/tegra???" \
         "$lfwbn/r8a779x*" \
         "$lfwbn/rockchip" \
         "$lfwbn/rtl_bt" \

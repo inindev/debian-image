@@ -77,7 +77,6 @@ setup_image() {
 
     echo "\n${cya}image $out_img_name is ready${rst}"
     echo "(use \"sudo mount -no loop,offset=16M $out_img_name /mnt\" to mount)\n"
-
 }
 
 install_kernel() {
@@ -131,6 +130,7 @@ get_img_name() {
     # odroid-m1_bookworm-12.4-1.img
     local dist=$(cat "$mountpt/etc/os-release" | sed -rn 's/VERSION_CODENAME=(.*)/\1/p')
     local ver=$(cat "$mountpt/etc/debian_version")
+    [ 'trixie/sid' = "$ver" ] && ver='13'
 
     img_name="${board}_${dist}-${ver}"
     if [ $rev -gt 0 ]; then
