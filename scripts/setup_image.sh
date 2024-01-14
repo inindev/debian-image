@@ -6,14 +6,16 @@ set -e
 
 
 main() {
-    local media="${1:-debian/mmc_2g.img}"
+    local media="${1:-debian/base_mmc_2g.img}"
     local mountpt="${2:-rootfs}"
 
     test -e "$media" || { echo "error: unable to find media: $media"; exit 1; }
     trap "on_exit $mountpt" EXIT INT QUIT ABRT TERM
 
-    local kern_rk3568_deb='downloads/linux-image-6.1.0-17-arm64_6.1.69-1_arm64.deb'
-    local kern_rk3588_deb='downloads/linux-image-6.7.0-1-arm64_6.7.0-1_arm64.deb'
+    prepare
+
+    local kern_rk3568_deb='downloads/kernels/linux-image-6.1.0-17-arm64_6.1.69-1_arm64.deb'
+    local kern_rk3588_deb='downloads/kernels/linux-image-6.7.0-1-arm64_6.7.0-1_arm64.deb'
 
     # nanopi-r5c
 #    setup_image "$media" "$mountpt" "nanopi-r5c" 'rk3568-nanopi-r5c.dtb' "$kern_rk3568_deb" '0' 'outbin'
@@ -97,14 +99,14 @@ set_dtb() {
     local mountpt="$1"
     local dtbname="$2"
 
-    echo "${h1}installing device tree...${rst}"
+    echo "${h1}installing device tree: $dtbname${rst}"
     sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/etc/kernel/postinst.d/dtb_cp"
     sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/etc/kernel/postinst.d/kernel_chmod"
     sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/etc/kernel/postrm.d/dtb_rm"
     sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/boot/mk_extlinux"
 
     # some kernels require an external dtb
-    [ -e "downloads/$dtbname" ] && install -vm 644 "downloads/$dtbname" "$mountpt/boot" || true
+    [ -e "downloads/dtbs/$dtbname" ] && install -vm 644 "downloads/dtbs/$dtbname" "$mountpt/boot" || true
 }
 
 set_hostname() {
@@ -143,9 +145,37 @@ install_uboot() {
     local board="$2"
 
     echo "${h1}installing u-boot...${rst}"
-    sudo dd bs=4K seek=8 if="downloads/${board}_idbloader.img" of="$media" conv=notrunc
-    sudo dd bs=4K seek=2048 if="downloads/${board}_u-boot.itb" of="$media" conv=notrunc,fsync
+    sudo dd bs=4K seek=8 if="downloads/uboot/${board}_idbloader.img" of="$media" conv=notrunc
+    sudo dd bs=4K seek=2048 if="downloads/uboot/${board}_u-boot.itb" of="$media" conv=notrunc,fsync
     echo "u-boot installed successfully"
+}
+
+prepare() {
+    local inindev_kern='linux-image-6.7.0-1-arm64_6.7.0-1_arm64.deb'
+
+    # download kernels
+    if ! [ -d 'downloads/kernels' ]; then
+        echo "${h1}downloading debian kernels...${rst}"
+        sh 'scripts/get_deb_kernel.sh' 'stable'
+        sh 'scripts/get_deb_kernel.sh' 'sid'
+    fi
+
+    if ! [ -e "downloads/kernels/$inindev_kern" ]; then
+        echo "${h1}downloading inindev kernel...${rst}"
+        wget -P 'downloads/kernels' "https://github.com/inindev/linux-rockchip/releases/latest/download/$inindev_kern"
+    fi
+
+    # extract rk3588 dtbs from the 6.7.0 kernel
+    if ! [ -d "downloads/dtbs" ]; then
+        echo "${h1}extracting rk3568 dtb files from kernel package...${rst}"
+        sh 'scripts/extract_dtbs.sh' "downloads/kernels/$inindev_kern" 'rk3568*.dtb'
+    fi
+
+    # download u-boot
+    if ! [ -d "downloads/uboot" ]; then
+        echo "${h1}downloading u-boot...${rst}"
+        sh 'scripts/get_uboot.sh'
+    fi
 }
 
 mount_media() {

@@ -15,7 +15,7 @@ set -e
 main() {
     # file media is sized with the number between 'mmc_' and '.img'
     #   use 'm' for 1024^2 and 'g' for 1024^3
-    local media='mmc_2g.img'
+    local media='base_mmc_2g.img'
     local deb_dist='bookworm'
     local hostname="${deb_dist}-arm64"
     local acct_uid='debian'
