@@ -21,22 +21,22 @@ main() {
     local kern_rk3588_deb="downloads/kernels/$inindev_kern"
 
     # nanopi-r5c
-#    setup_image "$media" "$mountpt" "nanopi-r5c" 'rk3568-nanopi-r5c.dtb' "$kern_rk3568_deb" '0' 'outbin'
+    setup_image "$media" "$mountpt" "nanopi-r5c" 'rk3568-nanopi-r5c.dtb' "$kern_rk3568_deb" '0' 'outbin'
 
     # nanopi-r5s
-#    setup_image "$media" "$mountpt" "nanopi-r5s" 'rk3568-nanopi-r5s.dtb' "$kern_rk3568_deb" '0' 'outbin'
+    setup_image "$media" "$mountpt" "nanopi-r5s" 'rk3568-nanopi-r5s.dtb' "$kern_rk3568_deb" '0' 'outbin'
 
     # odroid-m1
-#    setup_image "$media" "$mountpt" "odroid-m1" 'rk3568-odroid-m1.dtb' "$kern_rk3568_deb" '0' 'outbin'
+    setup_image "$media" "$mountpt" "odroid-m1" 'rk3568-odroid-m1.dtb' "$kern_rk3568_deb" '0' 'outbin'
 
     # radxa-e25
-#    setup_image "$media" "$mountpt" "radxa-e25" 'rk3568-radxa-e25.dtb' "$kern_rk3568_deb" '0' 'outbin'
+    setup_image "$media" "$mountpt" "radxa-e25" 'rk3568-radxa-e25.dtb' "$kern_rk3568_deb" '0' 'outbin'
 
     # nanopc-t6
-#    setup_image "$media" "$mountpt" "nanopc-t6" 'rk3588-nanopc-t6.dtb' "$kern_rk3588_deb" '0' 'outbin'
+    setup_image "$media" "$mountpt" "nanopc-t6" 'rk3588-nanopc-t6.dtb' "$kern_rk3588_deb" '0' 'outbin'
 
     # nanopi-r6c
-#    setup_image "$media" "$mountpt" "nanopi-r6c" 'rk3588-nanopi-r6c.dtb' "$kern_rk3588_deb" '0' 'outbin'
+    setup_image "$media" "$mountpt" "nanopi-r6c" 'rk3588s-nanopi-r6c.dtb' "$kern_rk3588_deb" '0' 'outbin'
 
     # rock-5b
     setup_image "$media" "$mountpt" "rock-5b" 'rk3588-rock-5b.dtb' "$kern_rk3588_deb" '0' 'outbin'
@@ -108,7 +108,7 @@ set_dtb() {
     sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/boot/mk_extlinux"
 
     # some kernels require an external dtb
-    [ -e "downloads/dtbs/$dtbname" ] && install -vm 644 "downloads/dtbs/$dtbname" "$mountpt/boot" || true
+    [ -e "downloads/dtbs/$dtbname" ] && sudo install -vm 644 "downloads/dtbs/$dtbname" "$mountpt/boot" || true
 }
 
 set_hostname() {
@@ -147,7 +147,7 @@ install_uboot() {
     local media="$1"
     local board="$2"
 
-    echo "${h1}installing u-boot...${rst}"
+    echo "${h1}installing u-boot: ${board}_idbloader.img & ${board}_u-boot.itb${rst}"
     sudo dd bs=4K seek=8 if="downloads/uboot/${board}_idbloader.img" of="$media" conv=notrunc
     sudo dd bs=4K seek=2048 if="downloads/uboot/${board}_u-boot.itb" of="$media" conv=notrunc,fsync
     echo "u-boot installed successfully"
