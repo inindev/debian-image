@@ -8,8 +8,9 @@ set -e
 main() {
     local media="${1:-debian/base_mmc_2g.img}"
     local mountpt="${2:-rootfs}"
-
-    local inindev_kern='linux-image-6.7.0-1-arm64_6.7.0-1_arm64.deb'
+    local lrev="${3:-0}"
+    local outbin="${4:-outbin}"
+    local inindev_kern="${5:-linux-image-6.7.0-1-arm64_6.7.0-1_arm64.deb}"
 
     test -e "$media" || { echo "error: unable to find media: $media"; exit 1; }
     trap "on_exit $mountpt" EXIT INT QUIT ABRT TERM
@@ -21,25 +22,25 @@ main() {
     local kern_rk3588_deb="downloads/kernels/$inindev_kern"
 
     # nanopi-r5c
-    setup_image "$media" "$mountpt" "nanopi-r5c" 'rk3568-nanopi-r5c.dtb' "$kern_rk3568_deb" '0' 'outbin'
+    setup_image "$media" "$mountpt" "nanopi-r5c" 'rk3568-nanopi-r5c.dtb' "$kern_rk3568_deb" "$lrev" "$outbin" 'nanopi_hook'
 
     # nanopi-r5s
-    setup_image "$media" "$mountpt" "nanopi-r5s" 'rk3568-nanopi-r5s.dtb' "$kern_rk3568_deb" '0' 'outbin'
+    setup_image "$media" "$mountpt" "nanopi-r5s" 'rk3568-nanopi-r5s.dtb' "$kern_rk3568_deb" "$lrev" "$outbin" 'nanopi_hook'
 
     # odroid-m1
-    setup_image "$media" "$mountpt" "odroid-m1" 'rk3568-odroid-m1.dtb' "$kern_rk3568_deb" '0' 'outbin'
+    setup_image "$media" "$mountpt" "odroid-m1" 'rk3568-odroid-m1.dtb' "$kern_rk3568_deb" "$lrev" "$outbin"
 
     # radxa-e25
-    setup_image "$media" "$mountpt" "radxa-e25" 'rk3568-radxa-e25.dtb' "$kern_rk3568_deb" '0' 'outbin'
+    setup_image "$media" "$mountpt" "radxa-e25" 'rk3568-radxa-e25.dtb' "$kern_rk3568_deb" "$lrev" "$outbin"
 
     # nanopc-t6
-    setup_image "$media" "$mountpt" "nanopc-t6" 'rk3588-nanopc-t6.dtb' "$kern_rk3588_deb" '0' 'outbin'
+    setup_image "$media" "$mountpt" "nanopc-t6" 'rk3588-nanopc-t6.dtb' "$kern_rk3588_deb" "$lrev" "$outbin"
 
     # nanopi-r6c
-    setup_image "$media" "$mountpt" "nanopi-r6c" 'rk3588s-nanopi-r6c.dtb' "$kern_rk3588_deb" '0' 'outbin'
+    setup_image "$media" "$mountpt" "nanopi-r6c" 'rk3588s-nanopi-r6c.dtb' "$kern_rk3588_deb" "$lrev" "$outbin"
 
     # rock-5b
-    setup_image "$media" "$mountpt" "rock-5b" 'rk3588-rock-5b.dtb' "$kern_rk3588_deb" '0' 'outbin'
+    setup_image "$media" "$mountpt" "rock-5b" 'rk3588-rock-5b.dtb' "$kern_rk3588_deb" "$lrev" "$outbin"
 }
 
 setup_image() {
@@ -48,8 +49,9 @@ setup_image() {
     local board="$3"
     local dtb="$4"
     local kfile="$5"
-    local rev="${6:-0}"
+    local lrev="${6:-0}"
     local outbin="${7:-outbin}"
+    local hook="$8"
 
     echo "${h1}configuring debian image...${rst}"
 
@@ -67,7 +69,10 @@ setup_image() {
 
     # the final image name is based on distribution name
     local img_name=''
-    get_img_name "$mountpt" "$board" "$rev"
+    get_img_name "$mountpt" "$board" "$lrev"
+
+    # post setup hook
+    [ -n "$hook" ] && "$hook" "$media" "$mountpt" "$board"
 
     unmount_media "$mountpt"
 
@@ -80,6 +85,14 @@ setup_image() {
 
     echo "\n${cya}image $out_img_name is ready${rst}"
     echo "(use \"sudo mount -no loop,offset=16M $out_img_name /mnt\" to mount)\n"
+}
+
+nanopi_hook() {
+    local media="$1"
+    local mountpt="$2"
+    local board="$3"
+
+    sudo sed -i "/setup for expand fs/e cat configs/network_${board}.cfg" "$mountpt/etc/rc.local"
 }
 
 install_kernel() {
@@ -127,17 +140,17 @@ set_hostname() {
 get_img_name() {
     local mountpt="$1"
     local board="$2"
-    local rev="${3:-0}"
+    local lrev="${3:-0}"
 
-    # <board>_<dist>-<ver>_<rev>.img
+    # <board>_<dist>-<ver>_<lrev>.img
     # odroid-m1_bookworm-12.4-1.img
     local dist=$(cat "$mountpt/etc/os-release" | sed -rn 's/VERSION_CODENAME=(.*)/\1/p')
     local ver=$(cat "$mountpt/etc/debian_version")
     [ 'trixie/sid' = "$ver" ] && ver='13'
 
     img_name="${board}_${dist}-${ver}"
-    if [ $rev -gt 0 ]; then
-        img_name="${img_name}-${rev}"
+    if [ $lrev -gt 0 ]; then
+        img_name="${img_name}-${lrev}"
     fi
 
     img_name="${img_name}.img"
