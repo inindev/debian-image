@@ -39,6 +39,12 @@ main() {
     # nanopi-r6c
     setup_image "$media" "$mountpt" "nanopi-r6c" 'rk3588s-nanopi-r6c.dtb' "$kern_rk3588_deb" "$lrev" "$outbin"
 
+    # orangepi-5
+    setup_image "$media" "$mountpt" "orangepi-5" 'rk3588s-orangepi-5.dtb' "$kern_rk3588_deb" "$lrev" "$outbin"
+
+    # orangepi-5-plus
+    setup_image "$media" "$mountpt" "orangepi-5-plus" 'rk3588-orangepi-5-plus.dtb' "$kern_rk3588_deb" "$lrev" "$outbin"
+
     # rock-5b
     setup_image "$media" "$mountpt" "rock-5b" 'rk3588-rock-5b.dtb' "$kern_rk3588_deb" "$lrev" "$outbin"
 }
