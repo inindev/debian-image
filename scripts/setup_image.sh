@@ -10,7 +10,7 @@ main() {
     local mountpt="${2:-rootfs}"
     local lrev="${3:-0}"
     local outbin="${4:-outbin}"
-    local inindev_kern="${5:-linux-image-6.7.0-1-arm64_6.7.0-1_arm64.deb}"
+    local inindev_kern="${5:-linux-image-6.9.1-1-arm64_6.9.1-1_arm64.deb}"
 
     test -e "$media" || { echo "error: unable to find media: $media"; exit 1; }
     trap "on_exit $mountpt" EXIT INT QUIT ABRT TERM
@@ -18,7 +18,7 @@ main() {
     # ensure all prerequisites are downloaded
     preflight_check "$inindev_kern"
 
-    local kern_rk3568_deb='downloads/kernels/linux-image-6.1.0-17-arm64_6.1.69-1_arm64.deb'
+    local kern_rk3568_deb='downloads/kernels/linux-image-6.1.0-21-arm64_6.1.90-1_arm64.deb'
     local kern_rk3588_deb="downloads/kernels/$inindev_kern"
 
     # nanopi-r5c
@@ -35,9 +35,6 @@ main() {
 
     # nanopc-t6
     setup_image "$media" "$mountpt" "nanopc-t6" 'rk3588-nanopc-t6.dtb' "$kern_rk3588_deb" "$lrev" "$outbin"
-
-    # nanopi-r6c
-    setup_image "$media" "$mountpt" "nanopi-r6c" 'rk3588s-nanopi-r6c.dtb' "$kern_rk3588_deb" "$lrev" "$outbin"
 
     # orangepi-5
     setup_image "$media" "$mountpt" "orangepi-5" 'rk3588s-orangepi-5.dtb' "$kern_rk3588_deb" "$lrev" "$outbin"
