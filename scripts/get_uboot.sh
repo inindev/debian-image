@@ -9,6 +9,13 @@ main() {
     rm -rf 'downloads/uboot'
     mkdir -p 'downloads/uboot'
 
+    # copy from local if available
+    if [ -d '../uboot-rockchip/outbin' ]; then
+        echo 'copying u-boot bins from local...'
+        cp -uv '../uboot-rockchip/outbin/'*.img '../uboot-rockchip/outbin/'*.itb 'downloads/uboot'
+        return
+    fi
+
     local tmp="$(mktemp)"
     wget -O "$tmp" 'https://github.com/inindev/uboot-rockchip/releases/latest/download/sha256sums.txt'
 
@@ -32,3 +39,4 @@ get_file() {
 
 cd "$(dirname "$(realpath "$0")")/.."
 main "$@"
+
