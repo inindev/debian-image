@@ -44,8 +44,8 @@ main() {
     local cache="cache.$deb_dist"
 
     # linux firmware
-    local lfw=$(download "$cache" 'https://mirrors.edge.kernel.org/pub/linux/kernel/firmware/linux-firmware-20230515.tar.xz')
-    local lfwsha='8b1acfa16f1ee94732a6acb50d9d6c835cf53af11068bd89ed207bbe04a1e951'
+    local lfw=$(download "$cache" 'https://mirrors.edge.kernel.org/pub/linux/kernel/firmware/linux-firmware-20240513.tar.xz')
+    local lfwsha='9f05edb99668135d37cedc4fdd18aac2802dc9e4566e086e6c6c2e321f3ecc4e'
     [ "$lfwsha" = $(sha256sum "$lfw" | cut -c1-64) ] || { echo "invalid hash for $lfw"; exit 5; }
 
     # setup media
@@ -92,6 +92,7 @@ main() {
     local lfwn=$(basename "$lfw")
     local lfwbn="${lfwn%%.*}"
     sudo tar -C "$mountpt/usr/lib/firmware" --strip-components=1 --wildcards -xavf "$lfw" \
+        "$lfwbn/arm/mali/arch10.8" \
         "$lfwbn/rockchip" \
         "$lfwbn/rtl_bt" \
         "$lfwbn/rtl_nic" \
