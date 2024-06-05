@@ -11,39 +11,39 @@ main() {
     local lrev="${3:-0}"
     local outbin="${4:-outbin}"
 
-    local kern_rk3568_deb='bookworm'
-    local kern_rk3588_deb='sid'
+    local kern_rk3568_dist='bookworm'
+    local kern_rk3588_dist='sid'
 
     # ensure all prerequisites are downloaded
-    preflight_check "$kern_rk3568_deb" "$kern_rk3588_deb"
+    preflight_check "$kern_rk3568_dist" "$kern_rk3588_dist"
     [ '_preflight' = "_$1" ] && exit 0
 
     test -e "$media" || { echo "error: unable to find media: $media"; exit 1; }
     trap "on_exit $mountpt" EXIT INT QUIT ABRT TERM
 
     # nanopi-r5c
-    setup_image "$media" "$mountpt" 'nanopi-r5c' 'rk3568-nanopi-r5c.dtb' "$kern_rk3568_deb" "$lrev" "$outbin" 'nanopi_hook'
+    setup_image "$media" "$mountpt" 'nanopi-r5c' 'rk3568-nanopi-r5c.dtb' "$kern_rk3568_dist" "$lrev" "$outbin" 'nanopi_hook'
 
     # nanopi-r5s
-    setup_image "$media" "$mountpt" 'nanopi-r5s' 'rk3568-nanopi-r5s.dtb' "$kern_rk3568_deb" "$lrev" "$outbin" 'nanopi_hook'
+    setup_image "$media" "$mountpt" 'nanopi-r5s' 'rk3568-nanopi-r5s.dtb' "$kern_rk3568_dist" "$lrev" "$outbin" 'nanopi_hook'
 
     # odroid-m1
-    setup_image "$media" "$mountpt" 'odroid-m1' 'rk3568-odroid-m1.dtb' "$kern_rk3568_deb" "$lrev" "$outbin"
+    setup_image "$media" "$mountpt" 'odroid-m1' 'rk3568-odroid-m1.dtb' "$kern_rk3568_dist" "$lrev" "$outbin"
 
     # radxa-e25
-    setup_image "$media" "$mountpt" 'radxa-e25' 'rk3568-radxa-e25.dtb' "$kern_rk3568_deb" "$lrev" "$outbin"
+    setup_image "$media" "$mountpt" 'radxa-e25' 'rk3568-radxa-e25.dtb' "$kern_rk3568_dist" "$lrev" "$outbin"
 
     # nanopc-t6
-    setup_image "$media" "$mountpt" 'nanopc-t6' 'rk3588-nanopc-t6.dtb' "$kern_rk3588_deb" "$lrev" "$outbin" 'sid_kern_hook'
+    setup_image "$media" "$mountpt" 'nanopc-t6' 'rk3588-nanopc-t6.dtb' "$kern_rk3588_dist" "$lrev" "$outbin" 'sid_inindev_kern_hook'
 
     # orangepi-5
-    setup_image "$media" "$mountpt" 'orangepi-5' 'rk3588s-orangepi-5.dtb' "$kern_rk3588_deb" "$lrev" "$outbin" 'sid_kern_hook'
+    setup_image "$media" "$mountpt" 'orangepi-5' 'rk3588s-orangepi-5.dtb' "$kern_rk3588_dist" "$lrev" "$outbin" 'sid_kern_hook'
 
     # orangepi-5-plus
-    setup_image "$media" "$mountpt" 'orangepi-5-plus' 'rk3588-orangepi-5-plus.dtb' "$kern_rk3588_deb" "$lrev" "$outbin" 'sid_kern_hook'
+    setup_image "$media" "$mountpt" 'orangepi-5-plus' 'rk3588-orangepi-5-plus.dtb' "$kern_rk3588_dist" "$lrev" "$outbin" 'sid_kern_hook'
 
     # rock-5b
-    setup_image "$media" "$mountpt" 'rock-5b' 'rk3588-rock-5b.dtb' "$kern_rk3588_deb" "$lrev" "$outbin" 'sid_kern_hook'
+    setup_image "$media" "$mountpt" 'rock-5b' 'rk3588-rock-5b.dtb' "$kern_rk3588_dist" "$lrev" "$outbin" 'sid_inindev_kern_hook'
 }
 
 setup_image() {
@@ -51,7 +51,7 @@ setup_image() {
     local mountpt="$2"
     local board="$3"
     local dtb="$4"
-    local kdeb="$5"
+    local kdeb="${5}.deb"
     local lrev="${6:-0}"
     local outbin="${7:-outbin}"
     local hook="$8"
@@ -120,6 +120,17 @@ sid_kern_hook() {
 	#deb-src http://deb.debian.org/debian sid main
 
 	EOF
+}
+
+sid_inindev_kern_hook() {
+    local media="$1"
+    local mountpt="$2"
+    local board="$3"
+
+    sid_kern_hook "$media" "$mountpt" "$board"
+
+    # install the inindev kernel
+    install_kernel "$mountpt" "downloads/kernels/inindev.deb"
 }
 
 install_kernel() {
@@ -194,26 +205,27 @@ install_uboot() {
 }
 
 preflight_check() {
-    local kern_rk3568_deb="$1"
-    local kern_rk3588_deb="$2"
+    local kern_rk3568_dist="$1"
+    local kern_rk3588_dist="$2"
 
     # download kernels
     if ! [ -d 'downloads/kernels' ]; then
         echo "${h1}downloading debian kernels...${rst}"
-        sh 'scripts/get_deb_kernel.sh' "$kern_rk3568_deb"
-        sh 'scripts/get_deb_kernel.sh' "$kern_rk3588_deb"
+        sh 'scripts/get_deb_kernel.sh' "$kern_rk3568_dist"
+        sh 'scripts/get_deb_kernel.sh' "$kern_rk3588_dist"
     fi
 
-#    # copy inindev kernel from local if available
-#    if [ -d '../linux-rockchip/kernel-'* ]; then
-#        local lkpath=$(ls '../linux-rockchip/kernel-'*'/linux-image-'*'-arm64_'*'_arm64.deb' 2>/dev/null)
-#        if [ -e "$lkpath" ]; then
-#            inindev_kern=$(basename "$lkpath")
-#            echo "${h1}copying inindev kernel from local...${rst}"
-#            cp -uv "$lkpath" 'downloads/kernels'
-#        fi
-#    fi
-#
+    # copy inindev kernel from local if available
+    if [ -d '../linux-rockchip/kernel-'* ]; then
+        local lkpath=$(ls '../linux-rockchip/kernel-'*'/linux-image-'*'-arm64_'*'_arm64.deb' 2>/dev/null)
+        if [ -e "$lkpath" ]; then
+            inindev_kern=$(basename "$lkpath")
+            echo "${h1}copying inindev kernel from local...${rst}"
+            cp -uv "$lkpath" 'downloads/kernels'
+            ln -sfv "$(basename "$lkpath")" 'downloads/kernels/inindev.deb'
+        fi
+    fi
+
 #    if ! [ -e "downloads/kernels/$inindev_kern" ]; then
 #        echo "${h1}downloading inindev kernel...${rst}"
 #        wget -P 'downloads/kernels' "https://github.com/inindev/linux-rockchip/releases/latest/download/$inindev_kern"
@@ -221,8 +233,8 @@ preflight_check() {
 
     # extract rk3568 dtbs from the rk3588 kernel
     if ! [ -d "downloads/dtbs" ]; then
-        echo "${h1}extracting rk3568 dtb files from $kern_rk3588_deb kernel package...${rst}"
-        sh 'scripts/extract_dtbs.sh' "downloads/kernels/$kern_rk3588_deb" 'rk3568*.dtb'
+        echo "${h1}extracting rk3568 dtb files from $kern_rk3588_dist kernel package...${rst}"
+        sh 'scripts/extract_dtbs.sh' "downloads/kernels/$kern_rk3588_dist" 'rk3568*.dtb'
     fi
 
     # download u-boot

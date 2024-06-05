@@ -22,7 +22,7 @@ main() {
     mkdir -p 'downloads/kernels'
     wget -nc -P "downloads/kernels" "$kurl"
 
-    ln -sfv "$(basename $kurl)" "downloads/kernels/$dist"
+    ln -sfv "$(basename $kurl)" "downloads/kernels/${dist}.deb"
 }
 
 
