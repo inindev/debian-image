@@ -234,12 +234,12 @@ preflight_check() {
     # extract rk3568 dtbs from the rk3588 kernel
     if ! [ -d "downloads/dtbs" ]; then
         echo "${h1}extracting rk3568 dtb files from $kern_rk3588_dist kernel package...${rst}"
-        sh 'scripts/extract_dtbs.sh' "downloads/kernels/$kern_rk3588_dist" 'rk3568*.dtb'
+        sh 'scripts/extract_dtbs.sh' "downloads/kernels/${kern_rk3588_dist}.deb" 'rk3568*.dtb'
     fi
 
-    # download u-boot
+    # get u-boot from local / remote
     if ! [ -d "downloads/uboot" ]; then
-        echo "${h1}downloading u-boot...${rst}"
+        echo "${h1}fetching u-boot...${rst}"
         sh 'scripts/get_uboot.sh'
     fi
 }
