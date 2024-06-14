@@ -103,14 +103,14 @@ sid_kern_hook() {
     local mountpt="$2"
     local board="$3"
 
-    cat <<-EOF | sudo tee "$mountpt/etc/apt/preferences.d/kernel"
+    cat <<-EOF | sudo tee "$mountpt/etc/apt/preferences.d/99-sid-kernel"
 	Package: *
-	Pin: release n=bookworm
-	Pin-Priority: 900
+	Pin: release n=bookworm*
+	Pin-Priority: 600
 
 	Package: linux-image-arm64
 	Pin: release n=sid
-	Pin-Priority: 1001
+	Pin-Priority: 900
 
 	EOF
 
