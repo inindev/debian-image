@@ -235,6 +235,8 @@ preflight_check() {
     if ! [ -d "downloads/dtbs" ]; then
         echo "${h1}extracting rk3568 dtb files from $kern_rk3588_dist kernel package...${rst}"
         sh 'scripts/extract_dtbs.sh' "downloads/kernels/${kern_rk3588_dist}.deb" 'rk3568*.dtb'
+        # use rk3568-odroid-m1.dtb from the bookworm debian kernel package
+        rm -f 'downloads/dtbs/rk3568-odroid-m1.dtb'
     fi
 
     # get u-boot from local / remote
