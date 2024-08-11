@@ -145,7 +145,7 @@ main() {
     # disable sshd until after keys are regenerated on first boot
     sudo rm -fv "$mountpt/etc/systemd/system/sshd.service"
     sudo rm -fv "$mountpt/etc/systemd/system/multi-user.target.wants/ssh.service"
-    sudo rm -fv "$mountpt/etc/ssh/ssh_host_"*
+    #sudo rm -fv "$mountpt/etc/ssh/ssh_host_"*
 
     # generate machine id on first boot
     sudo truncate -s0 "$mountpt/etc/machine-id"

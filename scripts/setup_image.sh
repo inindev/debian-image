@@ -11,50 +11,50 @@ main() {
     local lrev="${3:-0}"
     local outbin="${4:-outbin}"
 
-    local kern_rk3568_dist='bookworm'
-    local kern_rk3588_dist='sid'
+    local dist_next='trixie'
 
-    # ensure all prerequisites are downloaded
-    preflight_check "$kern_rk3568_dist" "$kern_rk3588_dist"
-    [ '_preflight' = "_$1" ] && exit 0
-
+    # check for media file
     test -e "$media" || { echo "error: unable to find media: $media"; exit 1; }
     trap "on_exit $mountpt" EXIT INT QUIT ABRT TERM
 
+    # download file dependencies
+    get_deps "$dist_next"
+    [ '_deps_only' = "_$1" ] && exit 0
+
     # nanopi-r5c
-    setup_image "$media" "$mountpt" 'nanopi-r5c' 'rk3568-nanopi-r5c.dtb' "$kern_rk3568_dist" "$lrev" "$outbin" 'nanopi_hook'
+    setup_image "$media" "$mountpt" 'stable' 'rk3568-nanopi-r5c.dtb' "$outbin" 'nanopi_hook'
 
     # nanopi-r5s
-    setup_image "$media" "$mountpt" 'nanopi-r5s' 'rk3568-nanopi-r5s.dtb' "$kern_rk3568_dist" "$lrev" "$outbin" 'nanopi_hook'
+    setup_image "$media" "$mountpt" 'stable' 'rk3568-nanopi-r5s.dtb' "$outbin" 'nanopi_hook'
 
     # odroid-m1
-    setup_image "$media" "$mountpt" 'odroid-m1' 'rk3568-odroid-m1.dtb' "$kern_rk3568_dist" "$lrev" "$outbin"
+    setup_image "$media" "$mountpt" 'stable' 'rk3568-odroid-m1.dtb' "$outbin"
 
     # radxa-e25
-    setup_image "$media" "$mountpt" 'radxa-e25' 'rk3568-radxa-e25.dtb' "$kern_rk3568_dist" "$lrev" "$outbin"
+    setup_image "$media" "$mountpt" 'stable' 'rk3568-radxa-e25.dtb' "$outbin"
 
     # nanopc-t6
-    setup_image "$media" "$mountpt" 'nanopc-t6' 'rk3588-nanopc-t6.dtb' "$kern_rk3588_dist" "$lrev" "$outbin" 'sid_inindev_kern_hook'
+    setup_image "$media" "$mountpt" "$dist_next" 'rk3588-nanopc-t6.dtb' "$outbin"
 
     # orangepi-5
-    setup_image "$media" "$mountpt" 'orangepi-5' 'rk3588s-orangepi-5.dtb' "$kern_rk3588_dist" "$lrev" "$outbin" 'sid_kern_hook'
+    setup_image "$media" "$mountpt" "$dist_next" 'rk3588s-orangepi-5.dtb' "$outbin"
 
     # orangepi-5-plus
-    setup_image "$media" "$mountpt" 'orangepi-5-plus' 'rk3588-orangepi-5-plus.dtb' "$kern_rk3588_dist" "$lrev" "$outbin" 'sid_kern_hook'
+    setup_image "$media" "$mountpt" "$dist_next" 'rk3588-orangepi-5-plus.dtb' "$outbin"
 
     # rock-5b
-    setup_image "$media" "$mountpt" 'rock-5b' 'rk3588-rock-5b.dtb' "$kern_rk3588_dist" "$lrev" "$outbin" 'sid_inindev_kern_hook'
+    setup_image "$media" "$mountpt" "$dist_next" 'rk3588-rock-5b.dtb' "$outbin"
 }
 
 setup_image() {
     local media="$1"
     local mountpt="$2"
-    local board="$3"
+    local kern_dist="$3"
     local dtb="$4"
-    local kdeb="${5}.deb"
-    local lrev="${6:-0}"
-    local outbin="${7:-outbin}"
-    local hook="$8"
+    local outbin="${5:-outbin}"
+    local hook="$6"
+
+    local board="${dtb#*-}" ; board="${board%.*}"
 
     echo "${h1}configuring debian image for board ${yel}$board${rst}${bld}...${rst}"
 
@@ -68,14 +68,21 @@ setup_image() {
     set_hostname "$mountpt" "$board"
 
     # install the kernel
-    install_kernel "$mountpt" "downloads/kernels/$kdeb"
+    [ '_stable' != "_$kern_dist" ] && dist_kern_hook "$mountpt" "$kern_dist"
+    sudo chroot "$mountpt" /usr/bin/apt update
+    sudo chroot "$mountpt" /usr/bin/apt -y upgrade
+    sudo chroot "$mountpt" /usr/bin/apt -y install linux-image-arm64
+    sudo chroot "$mountpt" /usr/bin/apt clean
 
     # the final image name is based on distribution name
     local img_name=''
-    get_img_name "$mountpt" "$board" "$lrev"
+    get_img_name "$mountpt" "$board"
 
     # post setup hook
     [ -n "$hook" ] && "$hook" "$media" "$mountpt" "$board"
+
+    # cleanup ssh keys
+    sudo rm -fv "$mountpt/etc/ssh/ssh_host_"*
 
     unmount_media "$mountpt"
 
@@ -98,68 +105,41 @@ nanopi_hook() {
     sudo sed -i "/setup for expand fs/e cat configs/network_${board}.cfg" "$mountpt/etc/rc.local"
 }
 
-sid_kern_hook() {
-    local media="$1"
-    local mountpt="$2"
-    local board="$3"
+dist_kern_hook() {
+    local mountpt="$1"
+    local dist="$2"
 
-    cat <<-EOF | sudo tee "$mountpt/etc/apt/preferences.d/99-sid-kernel"
+    cat <<-EOF | sudo tee "$mountpt/etc/apt/preferences.d/99-${dist}-kernel"
 	Package: *
 	Pin: release n=bookworm*
 	Pin-Priority: 600
 
 	Package: linux-image-arm64
-	Pin: release n=sid
-	Pin-Priority: 900
+	Pin: release n=$dist
+	Pin-Priority: 800
 
 	EOF
 
     cat <<-EOF | sudo tee -a "$mountpt/etc/apt/sources.list"
 	# linux-image*
-	deb http://deb.debian.org/debian sid main
-	#deb-src http://deb.debian.org/debian sid main
+	deb http://deb.debian.org/debian $dist main
+	#deb-src http://deb.debian.org/debian $dist main
 
 	EOF
-}
-
-sid_inindev_kern_hook() {
-    local media="$1"
-    local mountpt="$2"
-    local board="$3"
-
-    sid_kern_hook "$media" "$mountpt" "$board"
-
-    # install the inindev kernel
-    install_kernel "$mountpt" "downloads/kernels/inindev.deb"
-}
-
-install_kernel() {
-    local mountpt="$1"
-    local kdebpath="$2"
-
-    local kfpath="$(realpath "$kdebpath")"
-    local kfname="$(basename "$kfpath")"
-    local kdir="$(dirname "$kfpath")"
-
-    echo "${h1}installing kernel: $kfname${rst}"
-    sudo mount -vo bind "$kdir" "$mountpt/mnt"
-    sudo chroot "$mountpt" "/usr/bin/dpkg" -i "/mnt/$kfname"
-    sudo umount "$mountpt/mnt"
-    echo "kernel installed successfully"
 }
 
 set_dtb() {
     local mountpt="$1"
     local dtbname="$2"
 
+    # some kernels require an external dtb
+    [ -e "downloads/dtbs/$dtbname" ] && sudo install -vm 644 "downloads/dtbs/$dtbname" "$mountpt/boot" || true
+
     echo "${h1}installing device tree: $dtbname${rst}"
     sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/etc/kernel/postinst.d/dtb_cp"
     sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/etc/kernel/postinst.d/kernel_chmod"
     sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/etc/kernel/postrm.d/dtb_rm"
     sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/boot/mk_extlinux"
-
-    # some kernels require an external dtb
-    [ -e "downloads/dtbs/$dtbname" ] && sudo install -vm 644 "downloads/dtbs/$dtbname" "$mountpt/boot" || true
 }
 
 set_hostname() {
@@ -178,7 +158,6 @@ set_hostname() {
 get_img_name() {
     local mountpt="$1"
     local board="$2"
-    local lrev="${3:-0}"
 
     # <board>_<dist>-<ver>_<lrev>.img
     # odroid-m1_bookworm-12.4-1.img
@@ -186,12 +165,7 @@ get_img_name() {
     local ver=$(cat "$mountpt/etc/debian_version")
     [ 'trixie/sid' = "$ver" ] && ver='13'
 
-    img_name="${board}_${dist}-${ver}"
-    if [ $lrev -gt 0 ]; then
-        img_name="${img_name}-${lrev}"
-    fi
-
-    img_name="${img_name}.img"
+    img_name="${board}_${dist}-${ver}.img"
 }
 
 install_uboot() {
@@ -204,37 +178,20 @@ install_uboot() {
     echo "u-boot installed successfully"
 }
 
-preflight_check() {
-    local kern_rk3568_dist="$1"
-    local kern_rk3588_dist="$2"
+get_deps() {
+    local dist_next="$1"
 
-    # download kernels
+    # download kernel
     if ! [ -d 'downloads/kernels' ]; then
-        echo "${h1}downloading debian kernels...${rst}"
-        sh 'scripts/get_deb_kernel.sh' "$kern_rk3568_dist"
-        sh 'scripts/get_deb_kernel.sh' "$kern_rk3588_dist"
+        echo "${h1}downloading debian kernel...${rst}"
+        mkdir -p "downloads/kernels"
+        sh 'scripts/get_deb_kernel.sh' "$dist_next"
     fi
 
-    # copy inindev kernel from local if available
-    if [ -d '../linux-rockchip/kernel-'* ]; then
-        local lkpath=$(ls '../linux-rockchip/kernel-'*'/linux-image-'*'-arm64_'*'_arm64.deb' 2>/dev/null)
-        if [ -e "$lkpath" ]; then
-            inindev_kern=$(basename "$lkpath")
-            echo "${h1}copying inindev kernel from local...${rst}"
-            cp -uv "$lkpath" 'downloads/kernels'
-            ln -sfv "$(basename "$lkpath")" 'downloads/kernels/inindev.deb'
-        fi
-    fi
-
-#    if ! [ -e "downloads/kernels/$inindev_kern" ]; then
-#        echo "${h1}downloading inindev kernel...${rst}"
-#        wget -P 'downloads/kernels' "https://github.com/inindev/linux-rockchip/releases/latest/download/$inindev_kern"
-#    fi
-
-    # extract rk3568 dtbs from the rk3588 kernel
+    # extract rk3568 dtbs from the kernel deb
     if ! [ -d "downloads/dtbs" ]; then
-        echo "${h1}extracting rk3568 dtb files from $kern_rk3588_dist kernel package...${rst}"
-        sh 'scripts/extract_dtbs.sh' "downloads/kernels/${kern_rk3588_dist}.deb" 'rk3568*.dtb'
+        echo "${h1}extracting rk3568 dtb files from $dist_next kernel package...${rst}"
+        sh 'scripts/extract_dtbs.sh' "downloads/kernels/${dist_next}.deb" 'rk3568*.dtb'
         # use rk3568-odroid-m1.dtb from the bookworm debian kernel package
         rm -f 'downloads/dtbs/rk3568-odroid-m1.dtb'
     fi
