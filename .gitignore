@@ -5,4 +5,4 @@
 /debian/*.img.xz
 /debian/rootfs
 /downloads
-/outbin
+/outbin*

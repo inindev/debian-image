@@ -44,6 +44,9 @@ main() {
 
     # rock-5b
     setup_image "$media" "$mountpt" "$dist_next" 'rk3588-rock-5b.dtb' "$outbin"
+
+    # compress images
+    xz -z8v "$outbin/"*
 }
 
 setup_image() {
@@ -83,6 +86,11 @@ setup_image() {
 
     # cleanup ssh keys
     sudo rm -fv "$mountpt/etc/ssh/ssh_host_"*
+
+    # reduce entropy in free space to enhance compression
+    cat /dev/zero > "$mountpt/tmp/zero.bin" 2> /dev/null || true
+    sync
+    rm -fv "$mountpt/tmp/zero.bin"
 
     unmount_media "$mountpt"
 
