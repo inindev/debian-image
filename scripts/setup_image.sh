@@ -13,13 +13,16 @@ main() {
 
     local dist_next='trixie'
 
+    # download file dependencies
+    get_deps "$dist_next"
+    [ '_deps_only' = "_$1" ] && exit 0
+
     # check for media file
     test -e "$media" || { echo "error: unable to find media: $media"; exit 1; }
     trap "on_exit $mountpt" EXIT INT QUIT ABRT TERM
 
-    # download file dependencies
-    get_deps "$dist_next"
-    [ '_deps_only' = "_$1" ] && exit 0
+    # rock-s0
+    setup_image "$media" "$mountpt" 'inindev' 'rk3308-rock-s0.dtb' "$outbin"
 
     # nanopi-r5c
     setup_image "$media" "$mountpt" 'stable' 'rk3568-nanopi-r5c.dtb' "$outbin" 'nanopi_hook'
@@ -57,7 +60,8 @@ setup_image() {
     local outbin="${5:-outbin}"
     local hook="$6"
 
-    local board="${dtb#*-}" ; board="${board%.*}"
+    local board_full="${dtb%.*}"
+    local board="${board_full#*-}"
 
     echo "${h1}configuring debian image for board ${yel}$board${rst}${bld}...${rst}"
 
@@ -71,9 +75,14 @@ setup_image() {
     set_hostname "$mountpt" "$board"
 
     # install the kernel
-    [ '_stable' != "_$kern_dist" ] && dist_kern_hook "$mountpt" "$kern_dist"
+    [ '_inindev' != "_$kern_dist" ] && [ '_stable' != "_$kern_dist" ] && dist_kern_hook "$mountpt" "$kern_dist"
     sudo chroot "$mountpt" /usr/bin/apt update
     sudo chroot "$mountpt" /usr/bin/apt -y upgrade
+    if [ '_inindev' = "_$kern_dist" ]; then
+        sudo cp "downloads/kernels/inindev.deb" "$mountpt/tmp"
+        sudo chroot "$mountpt" /usr/bin/dpkg -i '/tmp/inindev.deb'
+        sudo rm -f "$mountpt/tmp/inindev.deb"
+    fi
     sudo chroot "$mountpt" /usr/bin/apt -y install linux-image-arm64
     sudo chroot "$mountpt" /usr/bin/apt clean
 
@@ -95,7 +104,7 @@ setup_image() {
     unmount_media "$mountpt"
 
     # install u-boot
-    install_uboot "$tmp_img_name" "$board"
+    install_uboot "$tmp_img_name" "$board_full"
 
     # rename to final name
     local out_img_name="$outbin/$img_name"
@@ -176,30 +185,33 @@ get_img_name() {
     img_name="${board}_${dist}-${ver}.img"
 }
 
-install_uboot() {
-    local media="$1"
-    local board="$2"
-
-    echo "${h1}installing u-boot: ${board}_idbloader.img & ${board}_u-boot.itb${rst}"
-    sudo dd bs=4K seek=8 if="downloads/uboot/${board}_idbloader.img" of="$media" conv=notrunc
-    sudo dd bs=4K seek=2048 if="downloads/uboot/${board}_u-boot.itb" of="$media" conv=notrunc,fsync
-    echo "u-boot installed successfully"
-}
-
 get_deps() {
     local dist_next="$1"
 
-    # download kernel
-    if ! [ -d 'downloads/kernels' ]; then
-        echo "${h1}downloading debian kernel...${rst}"
-        mkdir -p "downloads/kernels"
-        sh 'scripts/get_deb_kernel.sh' "$dist_next"
-    fi
+    # download u-boot
+    echo "${h1}downloading u-boot bins...${rst}"
+    mkdir -p 'downloads/uboot'
+    get_uboot_bin 'rk3308-rock-s0'
+    get_uboot_bin 'rk3568-nanopi-r5c'
+    get_uboot_bin 'rk3568-nanopi-r5s'
+    get_uboot_bin 'rk3568-odroid-m1'
+    get_uboot_bin 'rk3568-radxa-e25'
+    get_uboot_bin 'rk3588-nanopc-t6'
+    get_uboot_bin 'rk3588s-orangepi-5'
+    get_uboot_bin 'rk3588-orangepi-5-plus'
+    get_uboot_bin 'rk3588-rock-5b'
+
+    # download kernels
+    #echo "${h1}downloading debian kernel...${rst}"
+    #sh 'scripts/get_deb_kernel.sh' "$dist_next"
+
+    echo "${h1}downloading inindev kernel...${rst}"
+    sh 'scripts/get_inindev_kernel.sh'
 
     # extract rk3568 dtbs from the kernel deb
     if ! [ -d "downloads/dtbs" ]; then
-        echo "${h1}extracting rk3568 dtb files from $dist_next kernel package...${rst}"
-        sh 'scripts/extract_dtbs.sh' "downloads/kernels/${dist_next}.deb" 'rk3568*.dtb'
+        echo "${h1}extracting rk3568 dtb files from inindev kernel package...${rst}"
+        sh 'scripts/extract_dtbs.sh' "downloads/kernels/inindev.deb" 'rk3568*.dtb'
         # use rk3568-odroid-m1.dtb from the bookworm debian kernel package
         rm -f 'downloads/dtbs/rk3568-odroid-m1.dtb'
     fi
@@ -209,6 +221,28 @@ get_deps() {
         echo "${h1}fetching u-boot...${rst}"
         sh 'scripts/get_uboot.sh'
     fi
+}
+
+get_uboot_bin() {
+    local board_full="$1"
+    [ -f "downloads/uboot/${board_full}.zip" ] || wget -P 'downloads/uboot' "https://github.com/inindev/u-boot-build/releases/latest/download/${board_full}.zip"
+
+    local sha=$(unzip -p "downloads/uboot/${board_full}.zip" 'sha256sums.txt' | grep 'u-boot-rockchip.bin' | cut -c1-64)
+    test "$sha" = $(unzip -p "downloads/uboot/${board_full}.zip" 'u-boot-rockchip.bin' | sha256sum | cut -c1-64)
+}
+
+install_uboot() {
+    local media="$1"
+    local board_full="$2"
+
+    echo "${h1}installing u-boot: ${board_full}.zip${rst}"
+    local sha=$(unzip -p "downloads/uboot/${board_full}.zip" 'sha256sums.txt' | grep 'u-boot-rockchip.bin' | cut -c1-64)
+    local tmpdir="$(mktemp -d)"
+    unzip "downloads/uboot/${board_full}.zip" 'u-boot-rockchip.bin' -d "$tmpdir"
+    test "$sha" = $(sha256sum "$tmpdir/u-boot-rockchip.bin" | cut -c1-64)
+    sudo dd bs=4K seek=8 if="$tmpdir/u-boot-rockchip.bin" of="$media" conv=notrunc,fsync
+    rm -rf "$tmpdir"
+    echo "u-boot installed successfully"
 }
 
 mount_media() {
@@ -239,7 +273,7 @@ unmount_media() {
         mountpoint -q "$mountpt/$mp" && mlist="$mlist $mountpt/$mp"
     done
 
-    [ -n "$mlist" ] && echo "${h1}unmounting mount points..."
+    [ -n "$mlist" ] && echo "${h1}unmounting mount points...${rst}"
     for mp in $mlist; do
         sudo umount -v "$mp"
     done

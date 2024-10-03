@@ -17,12 +17,15 @@ main() {
     echo "lookup 2: https://packages.debian.org${kdir}/arm64/${kfile}/download"
     local kpre="https://packages.debian.org${kdir}/arm64/${kfile}/download"
     local kurl="$(wget -qO - $kpre | sed -rn 's|.*href=\"(.*_arm64.deb)\".*|\1|p' | head -n1)"
+    local kfile="$(basename $kurl)"
 
-    echo "fetching: $kurl"
-    mkdir -p 'downloads/kernels'
-    wget -nc -P "downloads/kernels" "$kurl"
+    if ! [ -f "downloads/kernels/$kfile" ]; then
+        echo "downloading: $kurl"
+        mkdir -p 'downloads/kernels'
+        wget -nc -P "downloads/kernels" "$kurl"
+    fi
 
-    ln -sfv "$(basename $kurl)" "downloads/kernels/${dist}.deb"
+    ln -sfv "$kfile" "downloads/kernels/${dist}.deb"
 }
 
 

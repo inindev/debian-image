@@ -20,11 +20,18 @@ fi
 if [ -e "${source1}" ]; then
 	echo -n "I: dtb_cp: symlink "
 	ln -sfv "$(basename "${source1}")" "${target}"
-elif [ -e "${source2}" ]; then
+elif [ -f "${source2}" ]; then
 	echo "I: dtb_cp: installing ${source2} to ${target}"
 	install -vm 644 "${source2}" "${target}"
 else
-	echo >&2 "E: dtb_cp: neither ${source1} nor ${source2} found"
-	exit 3
+	# search other kernel packages for a dtb before failing
+	res="$(find /usr/lib/linux-image* -name <DTB_FILE> | linux-version sort --reverse | head -n1)"
+	if [ -f "${res}" ]; then
+	        echo "I: dtb_cp: installing ${res} to ${target}"
+		install -vm 644 "${res}" "${target}"
+	else
+		echo >&2 "E: dtb_cp: neither ${source1} nor ${source2} found"
+		exit 3
+	fi
 fi
 
