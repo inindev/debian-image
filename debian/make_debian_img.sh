@@ -44,8 +44,8 @@ main() {
     local cache="cache.$deb_dist"
 
     # linux firmware
-    local lfw=$(download "$cache" 'https://mirrors.edge.kernel.org/pub/linux/kernel/firmware/linux-firmware-20240513.tar.xz')
-    local lfwsha='9f05edb99668135d37cedc4fdd18aac2802dc9e4566e086e6c6c2e321f3ecc4e'
+    local lfw=$(download "$cache" 'https://mirrors.edge.kernel.org/pub/linux/kernel/firmware/linux-firmware-20250311.tar.xz')
+    local lfwsha='b1083a36f19aea46f661dcfd4cd462d13933dcb4e7f0dc809525552dd5c3541d'
     [ "$lfwsha" = $(sha256sum "$lfw" | cut -c1-64) ] || { echo "invalid hash for $lfw"; exit 5; }
 
     # setup media
