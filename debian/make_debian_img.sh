@@ -89,11 +89,16 @@ main() {
 
     print_hdr 'installing firmware'
     sudo mkdir -p "$mountpt/usr/lib/firmware"
-    local lfwn=$(basename "$lfw")
-    local lfwbn="${lfwn%%.*}"
+    local lfwbn=$(basename "$lfw" '.tar.xz')
     sudo tar -C "$mountpt/usr/lib/firmware" --strip-components=1 --wildcards -xavf "$lfw" \
         "$lfwbn/arm/mali/arch10.8" \
+        "$lfwbn/microchip" \
+        "$lfwbn/nvidia/tegra124" \
+        "$lfwbn/nvidia/tegra186" \
+        "$lfwbn/nvidia/tegra194" \
+        "$lfwbn/nvidia/tegra210" \
         "$lfwbn/rockchip" \
+        "$lfwbn/r8a779x_usb3_v[1-3].dlmem" \
         "$lfwbn/rtl_bt" \
         "$lfwbn/rtl_nic" \
         "$lfwbn/rtlwifi" \
