@@ -25,10 +25,10 @@ main() {
     setup_image "$media" "$mountpt" 'inindev' 'rk3308-rock-s0.dtb' "$outbin"
 
     # nanopi-r5c
-    setup_image "$media" "$mountpt" 'stable' 'rk3568-nanopi-r5c.dtb' "$outbin" 'nanopi_hook'
+    setup_image "$media" "$mountpt" 'stable' 'rk3568-nanopi-r5c.dtb' "$outbin"
 
     # nanopi-r5s
-    setup_image "$media" "$mountpt" 'stable' 'rk3568-nanopi-r5s.dtb' "$outbin" 'nanopi_hook'
+    setup_image "$media" "$mountpt" 'stable' 'rk3568-nanopi-r5s.dtb' "$outbin"
 
     # odroid-m1
     setup_image "$media" "$mountpt" 'stable' 'rk3568-odroid-m1.dtb' "$outbin"
@@ -58,7 +58,6 @@ setup_image() {
     local kern_dist="$3"
     local dtb="$4"
     local outbin="${5:-outbin}"
-    local hook="$6"
 
     local board_full="${dtb%.*}"
     local board="${board_full#*-}"
@@ -90,8 +89,10 @@ setup_image() {
     local img_name=''
     get_img_name "$mountpt" "$board"
 
-    # post setup hook
-    [ -n "$hook" ] && "$hook" "$media" "$mountpt" "$board"
+    # post setup: inject network config if file exists
+    if [ -f "configs/network_${board}.cfg" ]; then
+        sudo sed -i "/setup for expand fs/e cat configs/network_${board}.cfg" "$mountpt/etc/rc.local"
+    fi
 
     # cleanup ssh keys
     sudo rm -fv "$mountpt/etc/ssh/ssh_host_"*
@@ -112,14 +113,6 @@ setup_image() {
 
     echo "\n${cya}image $out_img_name is ready${rst}"
     echo "(use \"sudo mount -no loop,offset=16M $out_img_name /mnt\" to mount)\n"
-}
-
-nanopi_hook() {
-    local media="$1"
-    local mountpt="$2"
-    local board="$3"
-
-    sudo sed -i "/setup for expand fs/e cat configs/network_${board}.cfg" "$mountpt/etc/rc.local"
 }
 
 dist_kern_hook() {
@@ -225,7 +218,7 @@ get_deps() {
 
 get_uboot_bin() {
     local board_full="$1"
-    [ -f "downloads/uboot/${board_full}.zip" ] || wget -P 'downloads/uboot' "https://github.com/inindev/u-boot-build/releases/latest/download/${board_full}.zip"
+    [ -f "downloads/uboot/${board_full}.zip" ] || wget -P 'downloads/uboot' "https://github.com/inindev/uboot-rockchip/releases/latest/download/${board_full}.zip"
 
     local sha=$(unzip -p "downloads/uboot/${board_full}.zip" 'sha256sums.txt' | grep 'u-boot-rockchip.bin' | cut -c1-64)
     test "$sha" = $(unzip -p "downloads/uboot/${board_full}.zip" 'u-boot-rockchip.bin' | sha256sum | cut -c1-64)
