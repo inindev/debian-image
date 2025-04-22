@@ -1,13 +1,13 @@
 #!/bin/sh
 
-# Copyright (C) 2024, John Clark <inindev@gmail.com>
+# Copyright (C) 2025, John Clark <inindev@gmail.com>
 
 set -e
 
-EXTL_MENU_ENABLE='auto'    # true, false, auto
-EXTL_MENU_ITEMS=2          # max kernels in menu
-EXTL_MENU_TIMEOUT=3        # timeout in seconds
-EXLT_CMD_LINE='rootwait'   # optional: ipv6.disable=1
+EXTL_MENU_ENABLE='auto'    # enable menu: 'true' (always show), 'false' (never show), 'auto' (show if multiple kernels)
+EXTL_MENU_ITEMS=2          # maximum number of kernels to list in the menu
+EXTL_MENU_TIMEOUT=3        # menu timeout in seconds
+EXTL_CMD_LINE='rootwait'   # kernel command-line parameters (e.g., 'ipv6.disable=1')
 
 
 # import release info
@@ -15,23 +15,21 @@ if [ -e /etc/os-release ]; then
     . /etc/os-release
 elif [ -e /usr/lib/os-release ]; then
     . /usr/lib/os-release
+else
+    PRETTY_NAME="Unknown Linux"
 fi
+
+
+get_dtb() {
+    echo '<DTB_FILE>'
+}
 
 gen_menu_header() {
     local ver_count="$1"
-
     local mpv=0
-    case "${EXTL_MENU_ENABLE}" in
-      0|false)
-        mpv=0
-        ;;
-      auto)
-        [ ${ver_count} -gt 1 ] && mpv=1
-        ;;
-      *)
+    if [ "$EXTL_MENU_ENABLE" = "true" ] || { [ "$EXTL_MENU_ENABLE" = "auto" ] && [ "$ver_count" -gt 1 ]; }; then
         mpv=1
-        ;;
-    esac
+    fi
 
     echo '#'
     echo '# this is an automatically generated file'
@@ -48,16 +46,16 @@ gen_menu_header() {
 gen_menu_item() {
     local num="$1"
     local kver="$2"
-    local dtbos="$3"
-    local prms="$4"
-
+    local dtb_file="$3"
+    local dtbos="$4"
+    local prms="$5"
     local boot_dir=$([ "$(stat --printf %d /)" -eq "$(stat --printf %d /boot)" ] && echo '/boot')
 
     echo "label l${num}"
     echo "\tmenu label ${PRETTY_NAME} ${kver}"
     echo "\tlinux ${boot_dir}/vmlinuz-${kver}"
     echo "\tinitrd ${boot_dir}/initrd.img-${kver}"
-    echo "\tfdt ${boot_dir}/<DTB_FILE>-${kver}"
+    echo "\tfdt ${boot_dir}/${dtb_file}-${kver}"
     [ -z "${dtbos}" ] || echo "\tfdtoverlays ${dtbos}"
     echo "\tappend ${prms}"
 }
@@ -71,21 +69,26 @@ get_root_dev() {
 }
 
 main() {
+    local dtb_file="$(get_dtb)"
     local kvers="$(linux-version list | linux-version sort --reverse | head -n ${EXTL_MENU_ITEMS})"
     local kver_count="$(echo "${kvers}" | wc -w)"
 
     local config="$(gen_menu_header ${kver_count})\n\n"
 
     local num=0
-    local dtbos="$(find '/boot/overlay' -maxdepth 1 -name '*.dtbo' 2>/dev/null | sort | xargs)"
-    local prms="root=$(get_root_dev) ${EXLT_CMD_LINE}"
+    local dtbos=""
+    if [ -d '/boot/overlay' ]; then
+        dtbos="$(find '/boot/overlay' -maxdepth 1 -name '*.dtbo' 2>/dev/null | sort | xargs)"
+    fi
+    local prms="root=$(get_root_dev) ${EXTL_CMD_LINE}"
     for kver in ${kvers}; do
-        local entry="$(gen_menu_item "${num}" "${kver}" "${dtbos}" "${prms}")"
+        local entry="$(gen_menu_item "${num}" "${kver}" "${dtb_file}" "${dtbos}" "${prms}")"
         num="$((num+1))"
         config="${config}\n${entry}\n"
     done
 
-    mkdir -pv '/boot/extlinux'
+    mkdir -p '/boot/extlinux'
+    [ -f '/boot/extlinux/extlinux.conf' ] && mv '/boot/extlinux/extlinux.conf' '/boot/extlinux/extlinux.conf.bak'
     echo "${config}" > '/boot/extlinux/extlinux.conf'
     echo 'file /boot/extlinux/extlinux.conf updated successfully'
 }

@@ -37,7 +37,7 @@ main() {
     setup_image "$media" "$mountpt" 'stable' 'rk3568-radxa-e25.dtb' "$outbin"
 
     # nanopc-t6
-    setup_image "$media" "$mountpt" "$dist_next" 'rk3588-nanopc-t6.dtb' "$outbin"
+    setup_image "$media" "$mountpt" "$dist_next" 'rk3588-nanopc-t6.dtb rk3588-nanopc-t6-lts.dtb' "$outbin"
 
     # orangepi-5
     setup_image "$media" "$mountpt" "$dist_next" 'rk3588s-orangepi-5.dtb' "$outbin"
@@ -56,13 +56,19 @@ setup_image() {
     local media="$1"
     local mountpt="$2"
     local kern_dist="$3"
-    local dtb="$4"
+    local dtb_files="$4"
     local outbin="${5:-outbin}"
 
-    local board_full="${dtb%.*}"
+    local dtb_file=$(echo "$dtb_files" | cut -d' ' -f1)
+    local board_full="${dtb_file%.*}"
     local board="${board_full#*-}"
 
     echo "${h1}configuring debian image for board ${yel}$board${rst}${bld}...${rst}"
+
+    if [ -f "$outbin/${board}"*".img" ]; then
+        echo "image already exists, skipping..."
+        return
+    fi
 
     # copy image locally
     local tmp_img_name="$outbin/${board}.img.tmp"
@@ -70,7 +76,7 @@ setup_image() {
     mount_media "$tmp_img_name" "$mountpt"
 
     # set dtb and image name
-    set_dtb "$mountpt" "$dtb"
+    set_dtbs "$mountpt" "$dtb_files"
     set_hostname "$mountpt" "$board"
 
     # install the kernel
@@ -138,18 +144,53 @@ dist_kern_hook() {
 	EOF
 }
 
-set_dtb() {
+set_dtbs() {
     local mountpt="$1"
-    local dtbname="$2"
+    local dtb_files="$2"
 
     # some kernels require an external dtb
-    [ -e "downloads/dtbs/$dtbname" ] && sudo install -vm 644 "downloads/dtbs/$dtbname" "$mountpt/boot" || true
+    for dtb_file in ${dtb_files}; do
+        [ -e "downloads/dtbs/$dtb_file" ] && sudo install -vm 644 "downloads/dtbs/$dtb_file" "$mountpt/boot" || true
+    done
 
-    echo "${h1}installing device tree: $dtbname${rst}"
-    sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/etc/kernel/postinst.d/dtb_cp"
-    sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/etc/kernel/postinst.d/kernel_chmod"
-    sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/etc/kernel/postrm.d/dtb_rm"
-    sudo sed -i "s/<DTB_FILE>/$dtbname/g" "$mountpt/boot/mk_extlinux"
+    # replace <DTB_FILES> in kernel scripts
+    echo "${h1}installing device tree: $dtb_files${rst}"
+    local dtb_files_escaped=$(echo "$dtb_files" | sed 's/ /\\ /g')
+    sudo sed -i "s/<DTB_FILES>/$dtb_files_escaped/g" "$mountpt/etc/kernel/postinst.d/dtb_cp"
+    sudo sed -i "s/<DTB_FILES>/$dtb_files_escaped/g" "$mountpt/etc/kernel/postinst.d/kernel_chmod"
+    sudo sed -i "s/<DTB_FILES>/$dtb_files_escaped/g" "$mountpt/etc/kernel/postrm.d/dtb_rm"
+
+    local token_count=$(echo "$dtb_files" | wc -w)
+    if [ "$token_count" -lt 2 ]; then
+        sudo sed -i "s/<DTB_FILE>/$dtb_files/g" "$mountpt/boot/mk_extlinux"
+        return
+    fi
+
+    # multiple dtb files: install a selector function
+    case "$dtb_files" in
+        *nanopc-t6*)
+            echo "setting up nanopc-t6 dtb selector"
+            dtb_function=$(get_dtb_nanopct6 | sed ':a;N;$!ba;s/\n/\\n/g')
+            sudo sed -i "/^get_dtb() {/,/^}/c\\$dtb_function" "$mountpt/boot/mk_extlinux"
+            ;;
+        *)
+            echo "unhandled dtb selector: $dtb_files"
+            exit 1
+            ;;
+    esac
+}
+
+get_dtb_nanopct6() {
+    cat <<-EOF
+	# see: https://github.com/friendlyarm/uboot-rockchip/blob/nanopi6-v2017.09/board/rockchip/nanopi6/hwrev.c
+	#      https://github.com/u-boot/u-boot/commit/7cec3e701940064b2cfc0cf8b80ff24c391c55ec
+	get_dtb() {
+	    local adc12=\$(cat /sys/bus/iio/devices/iio:device0/in_voltage5_raw 2>/dev/null || echo 464)
+	    local adc10=\$((adc12 >> 2))
+	    # lts v7: 478-545
+	    [ \$adc10 -ge 478 ] && [ \$adc10 -le 545 ] && echo 'rk3588-nanopc-t6-lts.dtb' || echo 'rk3588-nanopc-t6.dtb'
+	}
+	EOF
 }
 
 set_hostname() {
