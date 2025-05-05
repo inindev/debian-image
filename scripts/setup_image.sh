@@ -36,6 +36,12 @@ main() {
     # radxa-e25
     setup_image "$media" "$mountpt" 'stable' 'rk3568-radxa-e25.dtb' "$outbin"
 
+    # omni3576
+    setup_image "$media" "$mountpt" 'inindev' 'rk3576-luckfox-omni3576.dtb' "$outbin"
+
+    # sige5
+    setup_image "$media" "$mountpt" 'inindev' 'rk3576-armsom-sige5.dtb' "$outbin"
+
     # nanopc-t6
     setup_image "$media" "$mountpt" "$dist_next" 'rk3588-nanopc-t6.dtb rk3588-nanopc-t6-lts.dtb' "$outbin"
 
@@ -80,16 +86,23 @@ setup_image() {
     set_hostname "$mountpt" "$board"
 
     # install the kernel
-    [ '_inindev' != "_$kern_dist" ] && [ '_stable' != "_$kern_dist" ] && dist_kern_hook "$mountpt" "$kern_dist"
-    sudo chroot "$mountpt" /usr/bin/apt update
-    sudo chroot "$mountpt" /usr/bin/apt -y upgrade
+    # configure kernel distribution if not inindev or stable
+    [ '_inindev' != "_$kern_dist" ] && [ '_stable' != "_$kern_dist" ] && setup_dist_kernel "$mountpt" "$kern_dist"
+
+    echo "${h1}updating packages...${rst}"
+    sudo chroot "$mountpt" apt update
+    sudo chroot "$mountpt" apt -y upgrade
+
+    echo "${h1}installing kernel...${rst}"
     if [ '_inindev' = "_$kern_dist" ]; then
         sudo cp "downloads/kernels/inindev.deb" "$mountpt/tmp"
-        sudo chroot "$mountpt" /usr/bin/dpkg -i '/tmp/inindev.deb'
+        sudo chroot "$mountpt" dpkg -i '/tmp/inindev.deb'
         sudo rm -f "$mountpt/tmp/inindev.deb"
+        sudo chroot "$mountpt" apt -y install apparmor
+    else
+        sudo chroot "$mountpt" apt -y install linux-image-arm64
     fi
-    sudo chroot "$mountpt" /usr/bin/apt -y install linux-image-arm64
-    sudo chroot "$mountpt" /usr/bin/apt clean
+    sudo chroot "$mountpt" apt clean
 
     # the final image name is based on distribution name
     local img_name=''
@@ -101,9 +114,11 @@ setup_image() {
     fi
 
     # cleanup ssh keys
+    echo "${h1}purging ssh keys...${rst}"
     sudo rm -fv "$mountpt/etc/ssh/ssh_host_"*
 
     # reduce entropy in free space to enhance compression
+    echo "${h1}reducing entropy...${rst}"
     cat /dev/zero > "$mountpt/tmp/zero.bin" 2> /dev/null || true
     sync
     rm -fv "$mountpt/tmp/zero.bin"
@@ -121,7 +136,7 @@ setup_image() {
     echo "(use \"sudo mount -no loop,offset=16M $out_img_name /mnt\" to mount)\n"
 }
 
-dist_kern_hook() {
+setup_dist_kernel() {
     local mountpt="$1"
     local dist="$2"
 
@@ -154,7 +169,7 @@ set_dtbs() {
     done
 
     # replace <DTB_FILES> in kernel scripts
-    echo "${h1}installing device tree: $dtb_files${rst}"
+    echo "${h1}configuring device tree: ${yel}$dtb_files${rst}"
     local dtb_files_escaped=$(echo "$dtb_files" | sed 's/ /\\ /g')
     sudo sed -i "s/<DTB_FILES>/$dtb_files_escaped/g" "$mountpt/etc/kernel/postinst.d/dtb_cp"
     sudo sed -i "s/<DTB_FILES>/$dtb_files_escaped/g" "$mountpt/etc/kernel/postinst.d/kernel_chmod"
@@ -202,7 +217,9 @@ set_hostname() {
     local dist=$(cat "$mountpt/etc/os-release" | sed -rn 's/VERSION_CODENAME=(.*)/\1/p')
     local hostname="${dist}-${board}"
 
+    echo -n "${h1}configuring hostname: ${yel}"
     echo "$hostname" | sudo tee "$mountpt/etc/hostname"
+    echo -n "${rst}"
     sudo sed -i "s/\(127\.0\.1\.1\).*/\1\t$hostname/" "$mountpt/etc/hosts"
 }
 
@@ -225,15 +242,22 @@ get_deps() {
     # download u-boot
     echo "${h1}downloading u-boot bins...${rst}"
     mkdir -p 'downloads/uboot'
+    # 3308
     get_uboot_bin 'rk3308-rock-s0'
+    # 3568
     get_uboot_bin 'rk3568-nanopi-r5c'
     get_uboot_bin 'rk3568-nanopi-r5s'
     get_uboot_bin 'rk3568-odroid-m1'
     get_uboot_bin 'rk3568-radxa-e25'
+    # 3576
+    get_uboot_bin 'rk3576-luckfox-omni3576'
+    get_uboot_bin 'rk3576-armsom-sige5'
+    # 3588
     get_uboot_bin 'rk3588-nanopc-t6'
     get_uboot_bin 'rk3588s-orangepi-5'
     get_uboot_bin 'rk3588-orangepi-5-plus'
     get_uboot_bin 'rk3588-rock-5b'
+
 
     # download kernels
     #echo "${h1}downloading debian kernel...${rst}"
@@ -260,9 +284,6 @@ get_deps() {
 get_uboot_bin() {
     local board_full="$1"
     [ -f "downloads/uboot/${board_full}.zip" ] || wget -P 'downloads/uboot' "https://github.com/inindev/uboot-rockchip/releases/latest/download/${board_full}.zip"
-
-    local sha=$(unzip -p "downloads/uboot/${board_full}.zip" 'sha256sums.txt' | grep 'u-boot-rockchip.bin' | cut -c1-64)
-    test "$sha" = $(unzip -p "downloads/uboot/${board_full}.zip" 'u-boot-rockchip.bin' | sha256sum | cut -c1-64)
 }
 
 install_uboot() {
@@ -270,11 +291,11 @@ install_uboot() {
     local board_full="$2"
 
     echo "${h1}installing u-boot: ${board_full}.zip${rst}"
-    local sha=$(unzip -p "downloads/uboot/${board_full}.zip" 'sha256sums.txt' | grep 'u-boot-rockchip.bin' | cut -c1-64)
+    local sha=$(unzip -p "downloads/uboot/${board_full}.zip" "${board_full}/sha256sums.txt" | grep 'u-boot-rockchip.bin' | cut -c1-64)
     local tmpdir="$(mktemp -d)"
-    unzip "downloads/uboot/${board_full}.zip" 'u-boot-rockchip.bin' -d "$tmpdir"
-    test "$sha" = $(sha256sum "$tmpdir/u-boot-rockchip.bin" | cut -c1-64)
-    sudo dd bs=4K seek=8 if="$tmpdir/u-boot-rockchip.bin" of="$media" conv=notrunc,fsync
+    unzip "downloads/uboot/${board_full}.zip" "${board_full}/u-boot-rockchip.bin" -d "$tmpdir"
+    test "$sha" = $(sha256sum "$tmpdir/${board_full}/u-boot-rockchip.bin" | cut -c1-64)
+    sudo dd bs=4K seek=8 if="$tmpdir/${board_full}/u-boot-rockchip.bin" of="$media" conv=notrunc,fsync
     rm -rf "$tmpdir"
     echo "u-boot installed successfully"
 }
@@ -287,13 +308,18 @@ mount_media() {
         unmount_media "$mountpt"
     fi
 
-    echo "${h1}mounting media: $media${rst}"
+    echo "${h1}mounting media: ${yel}$media${rst}"
     mkdir -p "$mountpt"
+
     sudo mount -no loop,offset=16M "$media" "$mountpt"
-    sudo mount -vt proc  '/proc'    "$mountpt/proc"
-    sudo mount -vt sysfs '/sys'     "$mountpt/sys"
-    sudo mount -vo bind  '/dev'     "$mountpt/dev"
-    sudo mount -vo bind  '/dev/pts' "$mountpt/dev/pts"
+
+    local mp
+    for mp in 'dev' 'dev/pts' 'proc' 'sys' 'run'; do
+        sudo mount --bind "/$mp" "$mountpt/$mp" || {
+            echo "${red}error: failed to bind mount /$mp to $mountpt/$fs${rst}" >&2
+            return 1
+        }
+    done
 
     local part="$(/usr/sbin/losetup -nO name -j "$media")"
     echo "partition ${cya}$part${rst} successfully mounted on ${cya}$mountpt${rst}"
@@ -303,7 +329,7 @@ unmount_media() {
     local mountpt="$1"
 
     local mp mlist=''
-    for mp in 'mnt' 'dev/pts' 'dev' 'sys' 'proc' ''; do
+    for mp in 'run' 'sys' 'proc' 'dev/pts' 'dev' ''; do
         mountpoint -q "$mountpt/$mp" && mlist="$mlist $mountpt/$mp"
     done
 
