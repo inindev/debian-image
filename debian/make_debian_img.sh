@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright (C) 2024, John Clark <inindev@gmail.com>
+# Copyright (C) 2025, John Clark <inindev@gmail.com>
 
 set -e
 
@@ -401,6 +401,11 @@ print_hdr() {
     echo "\n${h1}$msg...${rst}"
 }
 
+print_err() {
+    local msg="$1"
+    echo "\n${bld}${yel}error: $msg${rst}\n" >&2
+}
+
 rst='\033[m'
 bld='\033[1m'
 red='\033[31m'
@@ -411,7 +416,22 @@ mag='\033[35m'
 cya='\033[36m'
 h1="${blu}==>${rst} ${bld}"
 
+# require linux
+uname_s=$(uname -s)
+if [ "$uname_s" != 'Linux' ]; then
+    print_err "this project requires a Linux system, but '$uname_s' was detected"
+    exit 1
+fi
+
+# require arm64
+uname_m=$(uname -m)
+if [ "$uname_m" != 'aarch64' ]; then
+    print_err "this project requires an ARM64 architecture, but '$uname_m' was detected"
+    exit 1
+fi
+
 cd "$(dirname "$(realpath "$0")")"
 #check_mount_only "$@"
+
 main "$@"
 
