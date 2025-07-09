@@ -14,8 +14,9 @@ main() {
 	rk3568-nanopi-r5s
 	rk3568-odroid-m1
 	rk3568-radxa-e25
-	rk3576-luckfox-omni3576
 	rk3576-armsom-sige5
+	rk3576-luckfox-omni3576
+	rk3576-nanopi-m5
 	rk3588-nanopc-t6
 	rk3588s-orangepi-5
 	rk3588-orangepi-5-plus
