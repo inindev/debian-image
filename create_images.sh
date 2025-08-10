@@ -24,7 +24,6 @@ main() {
 	EOF
     )
 
-    local dist_next='trixie'
     local outbin='outbin'
     local dl_dir='downloads'
     local mountpt='rootfs'
@@ -43,7 +42,7 @@ main() {
     mkdir -p "$outbin"
     for board in $boards; do
         psec "processing board: $board"
-        setup_image "$deb_media" "$mountpt" "$board" "$dist_next" "$outbin" "$dl_dir"
+        setup_image "$deb_media" "$mountpt" "$board" "$outbin" "$dl_dir"
     done
 
     # compress images
@@ -54,9 +53,8 @@ setup_image() {
     local deb_media="$1"
     local mountpt="$2"
     local board="$3"
-    local dist_next="$4"
-    local outbin="$5"
-    local dl_dir="$6"
+    local outbin="$4"
+    local dl_dir="$5"
 
     echo "${h1}configuring debian image for board ${yel}$board${rst}${bld}...${rst}"
 
@@ -76,7 +74,7 @@ setup_image() {
     # setups
     setup_dtb "$mountpt" "$board" "$dl_dir"
     setup_hostname "$mountpt" "$board"
-    setup_kernel "$mountpt" "$board" "$dist_next" "$dl_dir"
+    setup_kernel "$mountpt" "$board" "$dl_dir"
     setup_network "$mountpt" "$board"
 
     # the final image name is based on distribution name
@@ -123,61 +121,28 @@ setup_network() {
 setup_kernel() {
     local mountpt="$1"
     local board="$2"
-    local dist_next="$3"
-    local dl_dir="$4"
-
-    case "$board" in
-        rk3588*)
-            phead "setting up kernel: ${yel}debian $dist_next"
-            setup_next_kernel "$mountpt" "$dist_next"
-            ;;
-    esac
+    local dl_dir="$3"
 
     echo "${h1}updating packages...${rst}"
     sudo chroot "$mountpt" apt update
 
     case "$board" in
-        rk3568*)
-            phead "setting up kernel: ${yel}debian stable"
-            sudo chroot "$mountpt" apt -y install linux-image-arm64
-            ;;
-        *)
+        rk3576*)
             phead "setting up kernel: ${yel}inindev"
             sudo cp "$dl_dir/kernel/inindev.deb" "$mountpt/tmp"
             sudo chroot "$mountpt" dpkg -i '/tmp/inindev.deb'
             sudo rm -f "$mountpt/tmp/inindev.deb"
             sudo chroot "$mountpt" apt -y install apparmor
             ;;
+        *)
+            phead "setting up kernel: ${yel}debian stable"
+            sudo chroot "$mountpt" apt -y install linux-image-arm64
+            ;;
     esac
 
     echo "${h1}upgrading packages...${rst}"
     sudo chroot "$mountpt" apt -y upgrade
     sudo chroot "$mountpt" apt clean
-}
-
-setup_next_kernel() {
-    local mountpt="$1"
-    local dist_next="$2"
-
-    local stable=$(cat "$mountpt/etc/os-release" | sed -rn 's/VERSION_CODENAME=(.*)/\1/p')
-
-    cat <<-EOF | sudo tee "$mountpt/etc/apt/preferences.d/99-${dist}-kernel"
-	Package: *
-	Pin: release n=$stable*
-	Pin-Priority: 600
-
-	Package: linux-image-arm64
-	Pin: release n=$dist_next
-	Pin-Priority: 800
-
-	EOF
-
-    cat <<-EOF | sudo tee -a "$mountpt/etc/apt/sources.list"
-	# linux-image*
-	deb http://deb.debian.org/debian $dist_next main
-	#deb-src http://deb.debian.org/debian $dist_next main
-
-	EOF
 }
 
 setup_dtb() {
@@ -233,7 +198,6 @@ get_img_name() {
     # odroid-m1_bookworm-12.4-1.img
     local dist=$(cat "$mountpt/etc/os-release" | sed -rn 's/VERSION_CODENAME=(.*)/\1/p')
     local ver=$(cat "$mountpt/etc/debian_version")
-    [ 'trixie/sid' = "$ver" ] && ver='13'
 
     img_name="${board}_${dist}-${ver}.img"
 }
@@ -265,11 +229,6 @@ get_deps() {
 
     phead 'downloading latest inindev kernel'
     get_inindev_kernel "$dl_dir/kernel"
-
-    phead "extracting rk3568 dtbs from inindev kernel"
-    extract_dtbs "$dl_dir/kernel/inindev.deb" 'rk3568*.dtb' "$dl_dir/dtbs"
-    # use rk3568-odroid-m1.dtb from the bookworm debian kernel package
-    rm -f "$dl_dir/dtbs/rk3568-odroid-m1.dtb"
 }
 
 get_uboot_bins() {
