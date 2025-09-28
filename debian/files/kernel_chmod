@@ -9,15 +9,12 @@ version="$1"
 dtb_files='<DTB_FILES>'
 
 # passing the kernel version is required
-if [ -z "${version}" ]; then
-        echo >&2 "E: kernel_chmod: ${DPKG_MAINTSCRIPT_PACKAGE:-kernel package} did not pass a version number"
-        exit 2
-fi
+[ -z "$version" ] && { echo >&2 "E: dtb_cp: No kernel version number provided"; exit 2; }
 
-chmod 600 "/boot/System.map-${version}"
-chmod 600 "/boot/vmlinuz-${version}"
+chmod 600 "/boot/System.map-$version"
+chmod 600 "/boot/vmlinuz-$version"
 
-for dtb_file in ${dtb_files}; do
-	chmod 644 "/boot/${dtb_file}-${version}"
+for dtb_file in $dtb_files; do
+	chmod 644 "/boot/$dtb_file-$version"
 done
 

@@ -10,14 +10,11 @@ version="$1"
 dtb_files='<DTB_FILES>'
 
 # passing the kernel version is required
-if [ -z "${version}" ]; then
-	echo >&2 "E: dtb_cp: ${DPKG_MAINTSCRIPT_PACKAGE:-kernel package} did not pass a version number"
-	exit 2
-fi
+[ -z "$version" ] && { echo >&2 "E: dtb_rm: No version number provided"; exit 2; }
 
-for dtb_file in ${dtb_files}; do
-	target="/boot/${dtb_file}-${version}"
-	echo "I: dtb_rm: removing ${target}"
-	rm -f "${target}"
+for dtb_file in $dtb_files; do
+	target="/boot/$dtb_file-$version"
+	echo "I: dtb_rm: removing $target"
+	rm -f "$target"
 done
 

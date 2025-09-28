@@ -10,30 +10,26 @@ version="$1"
 dtb_files='<DTB_FILES>'
 
 # passing the kernel version is required
-if [ -z "${version}" ]; then
-	echo >&2 "E: dtb_cp: ${DPKG_MAINTSCRIPT_PACKAGE:-kernel package} did not pass a version number"
-	exit 2
-fi
+[ -z "$version" ] && { echo >&2 "E: dtb_cp: No version number provided"; exit 2; }
 
-for dtb_file in ${dtb_files}; do
-	source1="/boot/${dtb_file}"
-	source2="/usr/lib/linux-image-${version}/rockchip/${dtb_file}"
-	target="/boot/${dtb_file}-${version}"
+for dtb_file in $dtb_files; do
+	source1="/boot/$dtb_file"
+	source2="/usr/lib/linux-image-$version/rockchip/$dtb_file"
+	target="/boot/$dtb_file-$version"
 
-	if [ -e "${source1}" ]; then
-		echo -n "I: dtb_cp: symlinking ${source1} to ${target}"
-		ln -sf "$(basename "${source1}")" "${target}"
-	elif [ -f "${source2}" ]; then
-		echo "I: dtb_cp: copying ${source2} to ${target}"
-		install -m 644 "${source2}" "${target}"
+	if [ -f "$source2" ] && { [ ! -e "$source1" ] || [ "$(stat -c %s "$source2")" -gt "$(stat -c %s "$source1")" ]; }; then
+		echo "I: dtb_cp: copying $source2 to $target"
+		install -m 644 "$source2" "$target"
+	elif [ -e "$source1" ]; then
+		echo "I: dtb_cp: symlinking $source1 to $target"
+		ln -sf "$(basename "$source1")" "$target"
 	else
-		# search other kernel packages for a dtb before failing
-		res="$(find /usr/lib/linux-image* -name ${dtb_file} | linux-version sort --reverse | head -n1)"
-		if [ -f "${res}" ]; then
-			echo "I: dtb_cp: copying ${res} to ${target}"
-			install -m 644 "${res}" "${target}"
+		res="$(find /usr/lib/linux-image* -name "$dtb_file" | sort -Vr | head -n1)"
+		if [ -f "$res" ]; then
+			echo "I: dtb_cp: copying $res to $target"
+			install -m 644 "$res" "$target"
 		else
-			echo >&2 "E: dtb_cp: dtb file ${dtb_file} not found"
+			echo >&2 "E: dtb_cp: DTB file $dtb_file not found"
 			exit 3
 		fi
 	fi

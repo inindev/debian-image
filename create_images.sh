@@ -132,7 +132,6 @@ setup_kernel() {
             sudo cp "$dl_dir/kernel/inindev.deb" "$mountpt/tmp"
             sudo chroot "$mountpt" dpkg -i '/tmp/inindev.deb'
             sudo rm -f "$mountpt/tmp/inindev.deb"
-            sudo chroot "$mountpt" apt -y install apparmor
             ;;
         *)
             phead "setting up kernel: ${yel}debian stable"
