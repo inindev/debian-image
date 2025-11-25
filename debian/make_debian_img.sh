@@ -91,7 +91,7 @@ main() {
     sudo mkdir -p "$mountpt/usr/lib/firmware"
     local lfwbn=$(basename "$lfw" '.tar.xz')
     sudo tar -C "$mountpt/usr/lib/firmware" --strip-components=1 --wildcards -xavf "$lfw" \
-        "$lfwbn/arm/mali/arch10.8" \
+        "$lfwbn/arm/mali" \
         "$lfwbn/microchip" \
         "$lfwbn/nvidia/tegra124" \
         "$lfwbn/nvidia/tegra186" \
