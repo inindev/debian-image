@@ -36,7 +36,7 @@ main() {
     fi
 
     # download file dependencies
-    get_deps "$boards" 'v2025.07' "$dl_dir"
+    get_deps "$boards" '' "$dl_dir"
 
     # build images
     mkdir -p "$outbin"
