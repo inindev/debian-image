@@ -2,7 +2,7 @@
 
 # Copyright (C) 2025, John Clark <inindev@gmail.com>
 
-set -e
+set -euo pipefail
 
 # script exit codes:
 #   1: missing utility
@@ -11,6 +11,12 @@ set -e
 #   4: missing file
 #   5: invalid file hash
 #   9: superuser required
+
+# sector size configuration
+# set to 512 (default) or 4096 via environment variable
+#   ie: SECTOR_SIZE=4096 sh make_debian_img.sh
+SECTOR_SIZE="${SECTOR_SIZE:-512}"
+
 
 main() {
     # file media is sized with the number between 'mmc_' and '.img'
@@ -24,13 +30,18 @@ main() {
 
     if is_param 'clean' "$@"; then
         rm -rf cache*/var
-        rm -f "$media"*
+        rm -f "${media%.*}"*.img
         rm -rf "$mountpt"
         echo '\nclean complete\n'
         exit 0
     fi
 
     check_installed 'debootstrap' 'wget' 'xz-utils'
+
+    # append _4k before .img when SECTOR_SIZE=4096
+    if [ "$SECTOR_SIZE" = 4096 ]; then
+        media="${media%.*}_4k.${media##*.}"
+    fi
 
     if [ -f "$media" ]; then
         read -p "file $media exists, overwrite? <y/N> " yn
@@ -171,35 +182,48 @@ make_image_file() {
     local media="$1"
 
     rm -f "$media"*
-    local size="$(echo "$media" | sed -rn 's/.*mmc_([[:digit:]]+[m|g])\.img$/\1/p')"
-    truncate -s "$size" "$media"
-    stat --printf='image file: %n\nsize: %s bytes\n' "$media"
+
+    local size_spec="$(echo "$media" | sed -rn 's/.*mmc_([[:digit:]]+[m|g])(_4k)?\.img$/\1/p')"
+
+    truncate -s "$size_spec" "$media"
+
+    echo "image file: $media"
+    stat --printf='size: %s bytes\n' "$media"
 }
 
 parition_media() {
     local media="$1"
 
-    # partition with gpt
-    cat <<-EOF | /usr/sbin/sfdisk "$media"
+    # loop device with the desired sector size
+    local loop_dev=$(sudo losetup --sector-size="$SECTOR_SIZE" -fP --show "$media")
+    add_loop_dev "$loop_dev"
+
+    cat <<-EOF | sudo /usr/sbin/sfdisk "$loop_dev"
 	label: gpt
 	unit: sectors
 	first-lba: 2048
 	part1: start=32768, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=rootfs
 	EOF
     sync
+
+    remove_loop_dev "$loop_dev"
 }
 
 format_media() {
     local media="$1"
     local partnum="${2:-1}"
 
-    # create ext4 filesystem
-    lodev="$(/usr/sbin/losetup -f)"
-    sudo losetup -vP "$lodev" "$media" && sync
-    echo "loop device $lodev created for image file $media\n"
-    echo "formatting ${lodev}p${partnum} as ext4\n"
+    local lodev=$(sudo losetup -f)
+    add_loop_dev "$lodev"
+
+    sudo losetup --sector-size="$SECTOR_SIZE" -vP "$lodev" "$media"
+    sync
+
+    echo "loop device $lodev created for image file $media"
+    echo "formatting ${lodev}p${partnum} as ext4"
     sudo mkfs.ext4 -L rootfs -vO metadata_csum_seed "${lodev}p${partnum}" && sync
-    #losetup -vd "$lodev" && sync
+
+    remove_loop_dev "$lodev"
 }
 
 mount_media() {
@@ -212,15 +236,24 @@ mount_media() {
     fi
 
     if [ -d "$mountpt" ]; then
-        mountpoint -q "$mountpt/var/cache" && umount "$mountpt/var/cache"
-        mountpoint -q "$mountpt/var/lib/apt/lists" && umount "$mountpt/var/lib/apt/lists"
-        mountpoint -q "$mountpt" && umount "$mountpt"
+        mountpoint -q "$mountpt/var/cache" && sudo umount "$mountpt/var/cache"
+        mountpoint -q "$mountpt/var/lib/apt/lists" && sudo umount "$mountpt/var/lib/apt/lists"
+        mountpoint -q "$mountpt" && sudo umount "$mountpt"
     else
         mkdir -p "$mountpt"
     fi
 
+    local lodev=$(sudo losetup -f)
+    add_loop_dev "$lodev"
+
+    sudo losetup --sector-size="$SECTOR_SIZE" -vP "$lodev" "$media"
+    sync
+
     sudo mount "${lodev}p${partnum}" "$mountpt"
+
     if ! [ -d "$mountpt/lost+found" ]; then
+        sudo losetup -d "$lodev" 2>/dev/null || true
+        remove_loop_dev "$lodev"
         echo 'failed to mount the image file'
         exit 3
     fi
@@ -294,8 +327,13 @@ on_exit() {
         rm -rf "$mountpt"
     fi
 
-    sudo losetup -vD
+    # safety net: detach any loop devices we tracked
+    for dev in $LOOP_DEVS; do
+        [ -b "$dev" ] && sudo losetup -d "$dev" 2>/dev/null
+    done
+    LOOP_DEVS=""
 }
+
 mountpt='rootfs'
 trap on_exit EXIT INT QUIT ABRT TERM
 
@@ -372,7 +410,7 @@ download() {
 }
 
 is_param() {
-    local item match
+    local item match=''
     for item in "$@"; do
         if [ -z "$match" ]; then
             match="$item"
@@ -385,7 +423,7 @@ is_param() {
 
 # check if debian package is installed
 check_installed() {
-    local item todo
+    local item todo=''
     for item in "$@"; do
         dpkg -l "$item" 2>/dev/null | grep -q "ii  $item" || todo="$todo $item"
     done
@@ -395,6 +433,18 @@ check_installed() {
         echo "   run: ${bld}${grn}sudo apt update && sudo apt -y install$todo${rst}\n"
         exit 1
     fi
+}
+
+# global tracking of loop devices (space-delimited string)
+LOOP_DEVS=""
+
+add_loop_dev() {
+    LOOP_DEVS="$LOOP_DEVS $1"
+}
+
+remove_loop_dev() {
+    # Remove all occurrences of the device (in case of duplicates)
+    LOOP_DEVS=$(echo "$LOOP_DEVS" | sed "s| $1||g")
 }
 
 print_hdr() {
@@ -435,4 +485,3 @@ cd "$(dirname "$(realpath "$0")")"
 #check_mount_only "$@"
 
 main "$@"
-

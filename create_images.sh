@@ -2,7 +2,7 @@
 
 # Copyright (C) 2025, John Clark <inindev@gmail.com>
 
-set -e
+set -euo pipefail
 
 
 main() {
@@ -35,6 +35,20 @@ main() {
         exit 1;
     fi
 
+    # detect sector size
+    local sector_size=$(detect_sector_size "$deb_media")
+    case "$sector_size" in
+        512|4096)
+            echo "detected source image sector size: ${cya}$sector_size${rst} bytes"
+            ;;
+        *)
+            perr "invalid or unsupported sector size detected in source image: $deb_media"
+            echo "detected: $sector_size (expected 512 or 4096)"
+            echo "run: ${grn}sh debian/make_debian_img.sh${rst}\n"
+            exit 1
+            ;;
+    esac
+
     # download file dependencies
     get_deps "$boards" '' "$dl_dir"
 
@@ -42,7 +56,7 @@ main() {
     mkdir -p "$outbin"
     for board in $boards; do
         psec "processing board: $board"
-        setup_image "$deb_media" "$mountpt" "$board" "$outbin" "$dl_dir"
+        setup_image "$deb_media" "$sector_size" "$mountpt" "$board" "$outbin" "$dl_dir"
     done
 
     # compress images
@@ -51,25 +65,31 @@ main() {
 
 setup_image() {
     local deb_media="$1"
-    local mountpt="$2"
-    local board="$3"
-    local outbin="$4"
-    local dl_dir="$5"
+    local sector_size="$2"
+    local mountpt="$3"
+    local board="$4"
+    local outbin="$5"
+    local dl_dir="$6"
+
+    local suffix=""
+    if [ "$sector_size" = 4096 ]; then
+        suffix="_4k"
+    fi
 
     echo "${h1}configuring debian image for board ${yel}$board${rst}${bld}...${rst}"
 
-    if [ -f "$outbin/$board"*".img"* ]; then
+    if [ -f "${outbin}/${board}"*"${suffix}.img"* ]; then
         echo "image already exists, skipping..."
         return
     fi
 
     # copy image
-    local tmp_img_name="$outbin/${board}.img.tmp"
+    local tmp_img_name="${outbin}/${board}${suffix}.img.tmp"
     install -Dvm 644 "$deb_media" "$tmp_img_name"
 
     # mount image
     trap "on_exit $mountpt" EXIT INT QUIT ABRT TERM
-    mount_media "$tmp_img_name" "$mountpt"
+    mount_media "$tmp_img_name" "$mountpt" "$sector_size"
 
     # setups
     setup_dtb "$mountpt" "$board" "$dl_dir"
@@ -79,7 +99,7 @@ setup_image() {
 
     # the final image name is based on distribution name
     local img_name=''
-    get_img_name "$mountpt" "$board"
+    get_img_name "$mountpt" "$board" "$suffix"
 
     seal_image "$mountpt"
     unmount_media "$mountpt"
@@ -179,7 +199,6 @@ setup_hostname() {
     local board="$2"
 
     # hostname is <dist>-<board>
-    # bookworm-odroid-m1
     local dist=$(cat "$mountpt/etc/os-release" | sed -rn 's/VERSION_CODENAME=(.*)/\1/p')
     local hostname="${dist}-${board}"
 
@@ -192,13 +211,12 @@ setup_hostname() {
 get_img_name() {
     local mountpt="$1"
     local board="$2"
+    local suffix="$3"
 
-    # <board>_<dist>-<ver>_<lrev>.img
-    # odroid-m1_bookworm-12.4-1.img
     local dist=$(cat "$mountpt/etc/os-release" | sed -rn 's/VERSION_CODENAME=(.*)/\1/p')
     local ver=$(cat "$mountpt/etc/debian_version")
 
-    img_name="${board}_${dist}-${ver}.img"
+    img_name="${board}_${dist}-${ver}${suffix}.img"
 }
 
 install_uboot() {
@@ -283,9 +301,28 @@ extract_dtbs() {
     rm -rf "$tmpdir"
 }
 
+detect_sector_size() {
+    local media="$1"
+
+    # check for "EFI PART" at offset 512 (512-byte sector)
+    if dd if="$media" bs=1 skip=512 count=8 2>/dev/null | grep -q 'EFI PART'; then
+        echo '512'
+        return
+    fi
+
+    # check for "EFI PART" at offset 4096 (4096-byte sector)
+    if dd if="$media" bs=1 skip=4096 count=8 2>/dev/null | grep -q 'EFI PART'; then
+        echo '4096'
+        return
+    fi
+
+    echo 'unknown'
+}
+
 mount_media() {
     local media="$1"
     local mountpt="$2"
+    local sector_size="$3"
 
     if [ -d "$mountpt" ]; then
         unmount_media "$mountpt"
@@ -294,18 +331,25 @@ mount_media() {
     echo "${h1}mounting media: ${yel}$media${rst}"
     mkdir -p "$mountpt"
 
-    sudo mount -no loop,offset=16M "$media" "$mountpt"
+    local lodev=$(sudo losetup -f)
+    add_loop_dev "$lodev"
+
+    sudo losetup --sector-size="$sector_size" -vP "$lodev" "$media"
+    sync
+
+    sudo mount "${lodev}p1" "$mountpt"
 
     local mp
     for mp in 'dev' 'dev/pts' 'proc' 'sys' 'run'; do
         sudo mount --bind "/$mp" "$mountpt/$mp" || {
             perr "failed to bind mount ${cya}/$mp${rst} to ${cya}$mountpt/$mp"
+            sudo losetup -d "$lodev" 2>/dev/null || true
+            remove_loop_dev "$lodev"
             return 1
         }
     done
 
-    local part="$(/usr/sbin/losetup -nO name -j "$media")"
-    echo "partition ${cya}$part${rst} successfully mounted on ${cya}$mountpt${rst}"
+    echo "partition successfully mounted on ${cya}$mountpt${rst}"
 }
 
 unmount_media() {
@@ -320,6 +364,14 @@ unmount_media() {
     for mp in $mlist; do
         sudo umount -v "$mp"
     done
+
+    # detach any loop device associated with this mountpt (find via back-reference)
+    local attached=$(sudo losetup -l --noheadings | grep "$(realpath "$mountpt" 2>/dev/null || echo '')" | awk '{print $1}')
+    for dev in $attached; do
+        sudo losetup -d "$dev" 2>/dev/null || true
+        remove_loop_dev "$dev"
+    done
+
     rm -rf "$mountpt"
 }
 
@@ -329,8 +381,25 @@ on_exit() {
 
     unmount_media "$mountpt"
 
+    # safety net: detach any remaining tracked loop devices
+    for dev in $LOOP_DEVS; do
+        [ -b "$dev" ] && sudo losetup -d "$dev" 2>/dev/null
+    done
+    LOOP_DEVS=""
+
     trap - EXIT INT QUIT ABRT TERM
     exit "$rc"
+}
+
+# global tracking of loop devices (space-delimited string)
+LOOP_DEVS=""
+
+add_loop_dev() {
+    LOOP_DEVS="$LOOP_DEVS $1"
+}
+
+remove_loop_dev() {
+    LOOP_DEVS=$(echo "$LOOP_DEVS" | sed "s| $1||g")
 }
 
 phead() {
