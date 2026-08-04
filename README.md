@@ -2,6 +2,8 @@
 
 This repository provides scripts to build **Debian** images for various Rockchip-based ARM single-board computers (SBCs). It creates bootable images based on Debian Trixie, with support for both traditional 512-byte and 4096-byte sector sizes.
 
+The goal is to run stock Debian: the Debian kernel, no vendor BSP. Where mainline support is not yet sufficient for a board to be useful, a custom kernel is used until it is.
+
 The builder consists of two stages:
 - **First stage**: Creates a base Debian rootfs image (`base_mmc_2g.img` or `base_mmc_2g_4k.img`).
 - **Second stage**: Customizes the base image for specific boards, installs board-specific u-boot, DTBs, kernels, and configurations.
@@ -13,8 +15,8 @@ The builder consists of two stages:
 - Supports **512-byte** and **4096-byte** logical sector sizes (via `SECTOR_SIZE=4096` environment variable).
 - Board-specific customization: hostname, network config, device tree, kernel selection.
 - Installs u-boot binaries from [inindev/uboot-rockchip](https://github.com/inindev/uboot-rockchip).
-- Optional inindev custom kernel for newer boards (e.g., RK3576).
-- Output images named like `<board>_<codename>-<version>[_4k].img` (e.g., `rock-5b_trixie-13_4k.img`).
+- Debian's `linux-image-arm64` kernel on every board except rk3576, which needs a custom kernel until mainline support lands (see [Kernels](#kernels)).
+- Output images named like `<board>_<codename>-<version>[_4k].img` (e.g., `rk3588-rock-5b_trixie-13.2_4k.img`).
 
 <br/>
 
@@ -34,15 +36,25 @@ The builder consists of two stages:
 
 <br/>
 
+## Kernels
+The intent is to run the stock Debian kernel wherever mainline support allows it.
+
+- **all boards except rk3576** — Debian's `linux-image-arm64`. The rk3588 was in the same position as the rk3576 for some time; mainline support is now sufficient to boot headless, so these run Debian kernels.
+- **rk3576** — not yet mainlined enough to run the Debian kernel, so these images are built with a custom kernel from [inindev/linux-rockchip](https://github.com/inindev/linux-rockchip). They will move to the Debian kernel once mainline support lands.
+
+As of this writing, the Debian kernel does not quite support graphics mode on these boards. For a desktop, compile a kernel from a more recent upstream release, or use one from [Collabora](https://www.collabora.com/) or [inindev/linux-rockchip](https://github.com/inindev/linux-rockchip).
+
+<br/>
+
 ## Requirements
-- Linux host (script requires root privileges for loop devices and mounts).
+- Linux host. Run the scripts as a normal user with sudo access — they invoke `sudo` themselves for loop devices and mounts, and are not meant to be run as root.
 - ARM64 architecture required for building.
 - Installed tools: `debootstrap`, `wget`, `xz-utils`, `losetup`, `sfdisk`, `mkfs.ext4`, `dd`, `unzip`, `curl`, etc.
 
 <br/>
 
 ## Usage
-- Note: 4k sector images are for UFS media
+- Note: rk3576 boards support UFS media, which requires a 4096-byte logical sector size — that is what the 4k image is for.
 
 ### Build Base Image (First Stage)
 ```bash
