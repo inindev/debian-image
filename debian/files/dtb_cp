@@ -1,37 +1,45 @@
 #!/bin/sh -e
 
-# Copyright (C) 2025, John Clark <inindev@gmail.com>
+# Copyright (C) 2026, John Clark <inindev@gmail.com>
 
 # kernel post-install hook: /etc/kernel/postinst.d
-# script to copy the specified dtb file to /boot
-# after a new kernel is package installed
+# populate /boot/dtbs/<version>/rockchip from the kernel package,
+# then overlay any out-of-tree dtbs from /boot/dtbs/local
 
 version="$1"
-dtb_files='<DTB_FILES>'
 
 # passing the kernel version is required
 [ -z "$version" ] && { echo >&2 "E: dtb_cp: No version number provided"; exit 2; }
 
-for dtb_file in $dtb_files; do
-	source1="/boot/$dtb_file"
-	source2="/usr/lib/linux-image-$version/rockchip/$dtb_file"
-	target="/boot/$dtb_file-$version"
+src="/usr/lib/linux-image-$version/rockchip"
+local_src='/boot/dtbs/local/rockchip'
+dst="/boot/dtbs/$version/rockchip"
 
-	if [ -f "$source2" ] && { [ ! -e "$source1" ] || [ "$(stat -c %s "$source2")" -gt "$(stat -c %s "$source1")" ]; }; then
-		echo "I: dtb_cp: copying $source2 to $target"
-		install -m 644 "$source2" "$target"
-	elif [ -e "$source1" ]; then
-		echo "I: dtb_cp: symlinking $source1 to $target"
-		ln -sf "$(basename "$source1")" "$target"
-	else
-		res="$(find /usr/lib/linux-image* -name "$dtb_file" | sort -Vr | head -n1)"
-		if [ -f "$res" ]; then
-			echo "I: dtb_cp: copying $res to $target"
-			install -m 644 "$res" "$target"
+# a board whose dtbs come entirely from local is valid, so
+# fail only when neither source exists
+if [ ! -d "$src" ] && [ ! -d "$local_src" ]; then
+	echo >&2 "E: dtb_cp: no dtb source found ($src or $local_src)"
+	exit 3
+fi
+
+rm -rf "/boot/dtbs/$version"
+mkdir -p "$dst"
+
+if [ -d "$src" ]; then
+	echo "I: dtb_cp: copying $src to $dst"
+	cp -a "$src/." "$dst/"
+fi
+
+# overlay wins: local dtbs override packaged ones of the same name
+if [ -d "$local_src" ]; then
+	for f in "$local_src"/*.dtb; do
+		[ -e "$f" ] || continue
+		b="$(basename "$f")"
+		if [ -e "$dst/$b" ]; then
+			echo "I: dtb_cp: overriding $b with local copy"
 		else
-			echo >&2 "E: dtb_cp: DTB file $dtb_file not found"
-			exit 3
+			echo "I: dtb_cp: adding local $b"
 		fi
-	fi
-done
-
+		install -m 644 "$f" "$dst/$b"
+	done
+fi

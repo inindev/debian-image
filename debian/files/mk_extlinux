@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright (C) 2025, John Clark <inindev@gmail.com>
+# Copyright (C) 2026, John Clark <inindev@gmail.com>
 
 set -e
 
@@ -19,10 +19,6 @@ else
     PRETTY_NAME="Unknown Linux"
 fi
 
-
-get_dtb() {
-    echo '<DTB_FILE>'
-}
 
 gen_menu_header() {
     local ver_count="$1"
@@ -46,16 +42,16 @@ gen_menu_header() {
 gen_menu_item() {
     local num="$1"
     local kver="$2"
-    local dtb_file="$3"
-    local dtbos="$4"
-    local prms="$5"
+    local dtbos="$3"
+    local prms="$4"
     local boot_dir=$([ "$(stat --printf %d /)" -eq "$(stat --printf %d /boot)" ] && echo '/boot')
 
     echo "label l${num}"
     echo "\tmenu label ${PRETTY_NAME} ${kver}"
     echo "\tlinux ${boot_dir}/vmlinuz-${kver}"
     echo "\tinitrd ${boot_dir}/initrd.img-${kver}"
-    echo "\tfdt ${boot_dir}/${dtb_file}-${kver}"
+    # no explicit fdt: u-boot resolves fdtfile (set by board code) within fdtdir
+    echo "\tfdtdir ${boot_dir}/dtbs/${kver}/"
     [ -z "${dtbos}" ] || echo "\tfdtoverlays ${dtbos}"
     echo "\tappend ${prms}"
 }
@@ -69,7 +65,6 @@ get_root_dev() {
 }
 
 main() {
-    local dtb_file="$(get_dtb)"
     local kvers="$(linux-version list | linux-version sort --reverse | head -n ${EXTL_MENU_ITEMS})"
     local kver_count="$(echo "${kvers}" | wc -w)"
 
@@ -82,7 +77,7 @@ main() {
     fi
     local prms="root=$(get_root_dev) ${EXTL_CMD_LINE}"
     for kver in ${kvers}; do
-        local entry="$(gen_menu_item "${num}" "${kver}" "${dtb_file}" "${dtbos}" "${prms}")"
+        local entry="$(gen_menu_item "${num}" "${kver}" "${dtbos}" "${prms}")"
         num="$((num+1))"
         config="${config}\n${entry}\n"
     done

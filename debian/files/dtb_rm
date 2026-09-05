@@ -1,20 +1,16 @@
 #!/bin/sh -e
 
-# Copyright (C) 2025, John Clark <inindev@gmail.com>
+# Copyright (C) 2026, John Clark <inindev@gmail.com>
 
 # kernel post-remove hook: /etc/kernel/postrm.d
-# script to delete the specified dtb file from
-# /boot after a kernel is package removed
+# script to delete the dtb directory belonging to a
+# kernel after it is package removed
 
 version="$1"
-dtb_files='<DTB_FILES>'
 
 # passing the kernel version is required
 [ -z "$version" ] && { echo >&2 "E: dtb_rm: No version number provided"; exit 2; }
 
-for dtb_file in $dtb_files; do
-	target="/boot/$dtb_file-$version"
-	echo "I: dtb_rm: removing $target"
-	rm -f "$target"
-done
-
+# /boot/dtbs/local is not owned by any kernel package and is never removed
+echo "I: dtb_rm: removing /boot/dtbs/$version"
+rm -rf "/boot/dtbs/$version"
