@@ -1,15 +1,17 @@
 #!/bin/sh
 
-# Copyright (C) 2025, John Clark <inindev@gmail.com>
+# Copyright (C) 2026, John Clark <inindev@gmail.com>
 
 set -euo pipefail
 
 
 main() {
-    local deb_media="${1:-debian/base_mmc_2g.img}"
+    # source media is overridden by env: DEB_MEDIA=... sh create_images.sh
+    local deb_media="${DEB_MEDIA:-debian/base_mmc_2g.img}"
 
-    local boards=$(cat <<- 'EOF'
+    local all_boards=$(cat <<- 'EOF'
 	rk3308-rock-s0
+	rk3566-orangepi-cm4
 	rk3568-nanopi-r5c
 	rk3568-nanopi-r5s
 	rk3568-odroid-m1
@@ -23,6 +25,39 @@ main() {
 	rk3588-rock-5b
 	EOF
     )
+
+    # boards may be named on the command line, optionally as globs
+    # (e.g. 'rk3588*'); with no arguments every board is built
+    local no_compress='false'
+    local args='' arg
+    for arg in "$@"; do
+        case "$arg" in
+            --no-compress) no_compress='true' ;;
+            -*) perr "unknown option: $arg"; usage "$all_boards"; exit 1 ;;
+            *) args="$args $arg" ;;
+        esac
+    done
+
+    local boards=''
+    if [ -z "$args" ]; then
+        boards="$all_boards"
+    else
+        local pat match
+        for pat in $args; do
+            match=''
+            for board in $all_boards; do
+                case "$board" in
+                    $pat) match="$match $board" ;;
+                esac
+            done
+            if [ -z "$match" ]; then
+                perr "no such board: $pat"
+                usage "$all_boards"
+                exit 1
+            fi
+            boards="$boards$match"
+        done
+    fi
 
     local outbin='outbin'
     local dl_dir='downloads'
@@ -52,64 +87,154 @@ main() {
     # download file dependencies
     get_deps "$boards" '' "$dl_dir"
 
-    # build images
+    # 4k sector images target ufs media
+    local suffix=''
+    [ "$sector_size" = 4096 ] && suffix='_ufs'
+
     mkdir -p "$outbin"
+    local built=''
+
+    # build one generic rootfs per kernel flavor the selected boards need
+    local flavor flavors=''
     for board in $boards; do
-        psec "processing board: $board"
-        setup_image "$deb_media" "$sector_size" "$mountpt" "$board" "$outbin" "$dl_dir"
+        flavor="$(board_flavor "$board")"
+        case " $flavors " in
+            *" $flavor "*) ;;
+            *) flavors="$flavors $flavor" ;;
+        esac
     done
 
-    # compress images
-    xz -z8v "$outbin/"*".img"
+    for flavor in $flavors; do
+        psec "building generic rootfs: $flavor"
+        generic_img=''
+        build_rootfs "$deb_media" "$sector_size" "$mountpt" "$flavor" "$outbin" "$dl_dir" "$suffix"
+        eval "generic_$flavor=\"\$generic_img\""
+    done
+
+    # the stock 512 rootfs is shipped as a board-agnostic image: it boots any
+    # supported board once u-boot is written to it
+    if [ -z "$suffix" ]; then
+        case " $flavors " in
+            *' stock '*) built="$built $outbin/$generic_stock" ;;
+        esac
+    fi
+
+    # stamp each board: copy its flavor's rootfs and write u-boot to it
+    for board in $boards; do
+        psec "processing board: $board"
+        img_name=''
+        stamp_board "$board" "$outbin" "$dl_dir" "$suffix" \
+            "$(eval echo "\$generic_$(board_flavor "$board")")"
+        [ -n "$img_name" ] && built="$built $outbin/$img_name"
+    done
+
+    # compress only what this run built, leaving prior images untouched
+    if [ "$no_compress" = 'true' ]; then
+        echo "\n${cya}skipping compression (--no-compress)${rst}"
+    elif [ -n "$built" ]; then
+        phead 'compressing images'
+        xz -z8v $built
+    fi
 }
 
-setup_image() {
+# boards run the debian kernel unless mainline support is not yet sufficient
+board_flavor() {
+    case "$1" in
+        rk3576*) echo 'mainline' ;;
+        *)       echo 'stock' ;;
+    esac
+}
+
+usage() {
+    local all_boards="$1"
+
+    echo "\nusage: sh create_images.sh [--no-compress] [board...]"
+    echo "\n  board            one or more board names, globs allowed (default: all)"
+    echo "  --no-compress    leave images uncompressed"
+    echo "  DEB_MEDIA=<img>  override the source media path\n"
+    echo "${bld}available boards:${rst}"
+    local board
+    for board in $all_boards; do
+        echo "  $board"
+    done
+    echo
+}
+
+# build a board-agnostic rootfs for one kernel flavor; sets global generic_img
+build_rootfs() {
     local deb_media="$1"
     local sector_size="$2"
     local mountpt="$3"
-    local board="$4"
+    local flavor="$4"
     local outbin="$5"
     local dl_dir="$6"
+    local suffix="$7"
 
-    local suffix=""
-    if [ "$sector_size" = 4096 ]; then
-        suffix="_4k"
-    fi
+    local base="rockchip"
+    [ "$flavor" = 'stock' ] || base="rockchip-${flavor}"
 
-    echo "${h1}configuring debian image for board ${yel}$board${rst}${bld}...${rst}"
-
-    if [ -f "${outbin}/${board}"*"${suffix}.img"* ]; then
-        echo "image already exists, skipping..."
+    # reuse an existing rootfs so repeated runs only stamp
+    local existing="$(find "$outbin" -maxdepth 1 -name "${base}_*${suffix}.img" 2>/dev/null | head -n1)"
+    if [ -n "$existing" ]; then
+        generic_img="$(basename "$existing")"
+        echo "generic rootfs already exists, reusing: ${cya}$generic_img${rst}"
         return
     fi
 
-    # copy image
-    local tmp_img_name="${outbin}/${board}${suffix}.img.tmp"
-    install -Dvm 644 "$deb_media" "$tmp_img_name"
+    echo "${h1}building generic ${yel}$flavor${rst}${bld} rootfs...${rst}"
 
-    # mount image
-    trap "on_exit $mountpt" EXIT INT QUIT ABRT TERM
-    mount_media "$tmp_img_name" "$mountpt" "$sector_size"
+    local tmp_img="${outbin}/${base}${suffix}.img.tmp"
+    install -Dvm 644 "$deb_media" "$tmp_img"
 
-    # setups
-    setup_dtb "$mountpt" "$board" "$dl_dir"
-    setup_hostname "$mountpt" "$board"
-    setup_kernel "$mountpt" "$board" "$dl_dir"
-    setup_network "$mountpt" "$board"
+    # dash does not run an EXIT trap on a signal, so name them explicitly
+    trap "on_exit $mountpt" EXIT
+    trap "on_exit $mountpt INT" INT
+    trap "on_exit $mountpt QUIT" QUIT
+    trap "on_exit $mountpt TERM" TERM
+    mount_media "$tmp_img" "$mountpt" "$sector_size"
 
-    # the final image name is based on distribution name
-    local img_name=''
-    get_img_name "$mountpt" "$board" "$suffix"
+    setup_dtb "$mountpt"
+    setup_hostname "$mountpt"
+    setup_kernel "$mountpt" "$flavor" "$dl_dir"
+    setup_network "$mountpt"
+
+    # image name is based on distribution name (img_name is global)
+    get_img_name "$mountpt" "$base" "$suffix"
 
     seal_image "$mountpt"
     unmount_media "$mountpt"
 
-    # install u-boot
-    install_uboot "$tmp_img_name" "$board" "$dl_dir"
+    mv "$tmp_img" "$outbin/$img_name"
+    generic_img="$img_name"
 
-    # rename to final name
-    mv "$tmp_img_name" "$outbin/$img_name"
+    echo "\n${cya}generic rootfs $outbin/$generic_img is ready${rst}\n"
+}
 
+# specialize a generic rootfs for one board by writing its u-boot
+stamp_board() {
+    local board="$1"
+    local outbin="$2"
+    local dl_dir="$3"
+    local suffix="$4"
+    local generic="$5"
+
+    echo "${h1}configuring debian image for board ${yel}$board${rst}${bld}...${rst}"
+
+    # the generic name carries the distribution version, so reuse it
+    local name="${generic#rockchip}"
+    name="${name#-mainline}"
+    name="${board}${name}"
+
+    if [ -f "$outbin/$name" ] || [ -f "$outbin/${name}.xz" ]; then
+        echo "image already exists, skipping..."
+        return
+    fi
+
+    # the rootfs is board-agnostic: only u-boot differs
+    install -Dvm 644 "$outbin/$generic" "$outbin/$name"
+    install_uboot "$outbin/$name" "$board" "$dl_dir"
+
+    img_name="$name"
     echo "\n${cya}image $outbin/$img_name is ready${rst}"
     echo "(use \"sudo mount -no loop,offset=16M $outbin/$img_name /mnt\" to mount)\n"
 }
@@ -129,25 +254,28 @@ seal_image() {
 
 setup_network() {
     local mountpt="$1"
-    local board="$2"
 
-    # post setup: inject network config if file exists
-    if [ -f "configs/network_${board}.cfg" ]; then
-        phead "setting up networking for ${yel}$board"
-        sudo sed -i "/setup for expand fs/e cat configs/network_${board}.cfg" "$mountpt/etc/rc.local"
-    fi
+    # every image carries all board network configs: rc.local selects the
+    # matching one on first boot using /proc/device-tree/compatible
+    local net_src='configs/network'
+    [ -d "$net_src" ] || return 0
+
+    phead 'installing board network configs'
+    sudo install -dm 755 "$mountpt/etc/network-setup"
+    sudo cp -av "$net_src/." "$mountpt/etc/network-setup/"
+    sudo chmod 644 "$mountpt/etc/network-setup/"*
 }
 
 setup_kernel() {
     local mountpt="$1"
-    local board="$2"
+    local flavor="$2"
     local dl_dir="$3"
 
     echo "${h1}updating packages...${rst}"
     sudo chroot "$mountpt" apt update
 
-    case "$board" in
-        rk3576*)
+    case "$flavor" in
+        mainline)
             phead "setting up kernel: ${yel}inindev"
             sudo cp "$dl_dir/kernel/inindev.deb" "$mountpt/tmp"
             sudo chroot "$mountpt" dpkg -i '/tmp/inindev.deb'
@@ -166,41 +294,31 @@ setup_kernel() {
 
 setup_dtb() {
     local mountpt="$1"
-    local board="$2"
-    local dl_dir="$3"
 
-    local dtb_file="${board}.dtb"
+    # out-of-tree dtbs are installed version-independently to /boot/dtbs/local
+    # and are overlaid onto each kernel's dtb directory by the dtb_cp hook
+    local dtb_src='configs/dtbs'
+    [ -d "$dtb_src" ] || return 0
 
-    # install downloaded dtb if present
-    if [ -e "$dl_dir/dtbs/$dtb_file" ]; then
-        sudo install -vm 644 "$dl_dir/dtbs/$dtb_file" "$mountpt/boot"
-    fi
+    local dtbs="$(find "$dtb_src" -maxdepth 1 -name '*.dtb' 2>/dev/null | sort)"
+    [ -n "$dtbs" ] || return 0
 
-    local dtb_file="${board}.dtb"
-    echo "${h1}configuring device tree: ${yel}$dtb_file${rst}"
+    echo "${h1}installing local device trees${rst}"
+    sudo install -dm 755 "$mountpt/boot/dtbs/local/rockchip"
 
-    local dtb_cfg="configs/dtb_${board}.cfg"
-    if [ -f "$dtb_cfg" ]; then
-        dtb_file=$(head -n 1 "$dtb_cfg" | sed 's/ /\\ /g')
-        local dtb_func=$(sed -n '3,$p' "$dtb_cfg" | sed ':a;N;$!ba;s/\n/\\n/g')
-	sudo sed -i "/^get_dtb() {/,/^}/c\\$dtb_func" "$mountpt/boot/mk_extlinux"
-    else
-        sudo sed -i "s/<DTB_FILE>/$dtb_file/g" "$mountpt/boot/mk_extlinux"
-    fi
-
-    # replace <DTB_FILES> in kernel scripts
-    sudo sed -i "s/<DTB_FILES>/$dtb_file/g" "$mountpt/etc/kernel/postinst.d/dtb_cp"
-    sudo sed -i "s/<DTB_FILES>/$dtb_file/g" "$mountpt/etc/kernel/postinst.d/kernel_chmod"
-    sudo sed -i "s/<DTB_FILES>/$dtb_file/g" "$mountpt/etc/kernel/postrm.d/dtb_rm"
+    local dtb
+    for dtb in $dtbs; do
+        sudo install -vm 644 "$dtb" "$mountpt/boot/dtbs/local/rockchip"
+    done
 }
 
 setup_hostname() {
     local mountpt="$1"
-    local board="$2"
 
-    # hostname is <dist>-<board>
+    # images are board-generic: rc.local sets the real hostname on first boot
+    # from /proc/device-tree/compatible
     local dist=$(cat "$mountpt/etc/os-release" | sed -rn 's/VERSION_CODENAME=(.*)/\1/p')
-    local hostname="${dist}-${board}"
+    local hostname="${dist}-rockchip"
 
     echo -n "${h1}configuring hostname: ${yel}"
     echo "$hostname" | sudo tee "$mountpt/etc/hostname"
@@ -376,8 +494,10 @@ unmount_media() {
 }
 
 on_exit() {
-    local mountpt="$1"
+    # capture before anything else runs and overwrites it
     local rc="$?"
+    local mountpt="$1"
+    local sig="${2:-}"
 
     unmount_media "$mountpt"
 
@@ -387,7 +507,12 @@ on_exit() {
     done
     LOOP_DEVS=""
 
-    trap - EXIT INT QUIT ABRT TERM
+    trap - EXIT INT QUIT TERM
+
+    # for a signal, die from it: the shell sets the status and the caller
+    # sees a killed process rather than one that merely exited
+    [ -n "$sig" ] && kill -"$sig" $$
+
     exit "$rc"
 }
 

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright (C) 2025, John Clark <inindev@gmail.com>
+# Copyright (C) 2026, John Clark <inindev@gmail.com>
 
 set -e
 
@@ -30,6 +30,33 @@ else
     tune2fs -U "$uuid" "$rp"
     sed -i "s|$(findmnt -fsno source '/')|UUID=$uuid|" '/etc/fstab'
     /boot/mk_extlinux
+
+    # board specialization: the device tree u-boot selected names the board,
+    # so a generic image tailors itself to its hardware on first boot here.
+    # /proc/device-tree/compatible holds nul-separated strings, most specific
+    # first: "friendlyarm,nanopc-t6-lts\0rockchip,rk3588\0"
+    if [ -e '/proc/device-tree/compatible' ]; then
+        compat="$(tr '\0' '\n' < /proc/device-tree/compatible | head -n1)"
+        board="${compat#*,}"
+
+        # hostname is <dist>-<board>, with any board revision suffix dropped:
+        # it is a handle for a human, not a hardware inventory
+        . /etc/os-release
+        hostname="${VERSION_CODENAME}-$(echo "$board" | sed -E 's/-v[0-9].*$//' | tr '.' '-')"
+        echo "configuring hostname: $hostname"
+        echo "$hostname" > /etc/hostname
+        hostnamectl set-hostname "$hostname" 2>/dev/null || true
+        sed -i "s/\(127\.0\.1\.1\).*/\1\t$hostname/" /etc/hosts
+
+        # board-specific network setup, if any
+        netcfg="/etc/network-setup/$board"
+        if [ -f "$netcfg" ]; then
+            echo "applying network setup: $netcfg"
+            . "$netcfg"
+        else
+            echo "no network setup for '$compat', using defaults"
+        fi
+    fi
 
     # setup for expand fs
     chmod 774 "$this"

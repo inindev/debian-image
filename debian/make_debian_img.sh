@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright (C) 2025, John Clark <inindev@gmail.com>
+# Copyright (C) 2026, John Clark <inindev@gmail.com>
 
 set -euo pipefail
 
@@ -87,6 +87,7 @@ main() {
     sudo install -Dvm 754 'files/mk_extlinux' "$mountpt/boot/mk_extlinux"
     sudo ln -svf '../../../boot/mk_extlinux' "$mountpt/etc/kernel/postinst.d/update_extlinux"
     sudo ln -svf '../../../boot/mk_extlinux' "$mountpt/etc/kernel/postrm.d/update_extlinux"
+    sudo install -Dvm 755 'files/dtb_info.sh' "$mountpt/boot/dtbs/dtb_info.sh"
 
     print_hdr 'installing overlay files'
     local dtbos="$(find "$cache/overlays" -maxdepth 1 -name '*.dtbo' 2>/dev/null | sort)"
